@@ -146,7 +146,7 @@ internal class LocalPlaylistRepositoryImpl(
             val pairs =
                 localDataSource.getPlaylistPairSongByOffset(
                     playlistId = id,
-                    filterState = FilterState.OlderFirst,
+                    filterState = FilterState.CustomOrder,
                     offset = currentPage,
                 )
             if (pairs.isNullOrEmpty()) {
