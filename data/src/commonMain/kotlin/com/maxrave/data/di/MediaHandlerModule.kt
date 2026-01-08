@@ -15,6 +15,7 @@ val mediaHandlerModule =
                 songRepository = get(),
                 streamRepository = get(),
                 localPlaylistRepository = get(),
+                analyticsRepository = get(),
                 coroutineScope = get<CoroutineScope>(named(Config.SERVICE_SCOPE)),
             )
         }

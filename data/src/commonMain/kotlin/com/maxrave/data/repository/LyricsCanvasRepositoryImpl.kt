@@ -2,7 +2,7 @@
 
 package com.maxrave.data.repository
 
-import com.maxrave.data.db.LocalDataSource
+import com.maxrave.data.db.datasource.LocalDataSource
 import com.maxrave.data.mapping.toCanvasResult
 import com.maxrave.data.mapping.toLyrics
 import com.maxrave.domain.data.entities.LyricsEntity

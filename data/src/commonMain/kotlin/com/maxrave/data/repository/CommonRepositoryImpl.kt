@@ -1,6 +1,6 @@
 package com.maxrave.data.repository
 
-import com.maxrave.data.db.LocalDataSource
+import com.maxrave.data.db.datasource.LocalDataSource
 import com.maxrave.data.db.MusicDatabase
 import com.maxrave.data.io.fileSystem
 import com.maxrave.domain.data.entities.NotificationEntity

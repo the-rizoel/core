@@ -1,19 +1,12 @@
 package com.maxrave.data.mediaservice
 
-import com.maxrave.domain.manager.DataStoreManager
-import com.maxrave.domain.mediaservice.handler.MediaPlayerHandler
-import com.maxrave.domain.mediaservice.player.MediaPlayerInterface
-import com.maxrave.domain.repository.LocalPlaylistRepository
-import com.maxrave.domain.repository.SongRepository
-import com.maxrave.domain.repository.StreamRepository
-import kotlinx.coroutines.CoroutineScope
-
 actual fun createMediaServiceHandler(
-    dataStoreManager: DataStoreManager,
-    songRepository: SongRepository,
-    streamRepository: StreamRepository,
-    localPlaylistRepository: LocalPlaylistRepository,
-    coroutineScope: CoroutineScope,
-): MediaPlayerHandler {
+    dataStoreManager: com.maxrave.domain.manager.DataStoreManager,
+    songRepository: com.maxrave.domain.repository.SongRepository,
+    streamRepository: com.maxrave.domain.repository.StreamRepository,
+    localPlaylistRepository: com.maxrave.domain.repository.LocalPlaylistRepository,
+    analyticsRepository: com.maxrave.domain.repository.AnalyticsRepository,
+    coroutineScope: kotlinx.coroutines.CoroutineScope,
+): com.maxrave.domain.mediaservice.handler.MediaPlayerHandler {
     TODO("Not yet implemented")
 }

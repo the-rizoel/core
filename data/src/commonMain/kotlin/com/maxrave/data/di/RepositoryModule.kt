@@ -4,6 +4,7 @@ import com.maxrave.common.Config.SERVICE_SCOPE
 import com.maxrave.data.io.fileDir
 import com.maxrave.data.repository.AccountRepositoryImpl
 import com.maxrave.data.repository.AlbumRepositoryImpl
+import com.maxrave.data.repository.AnalyticsRepositoryImpl
 import com.maxrave.data.repository.ArtistRepositoryImpl
 import com.maxrave.data.repository.CommonRepositoryImpl
 import com.maxrave.data.repository.HomeRepositoryImpl
@@ -17,6 +18,7 @@ import com.maxrave.data.repository.StreamRepositoryImpl
 import com.maxrave.data.repository.UpdateRepositoryImpl
 import com.maxrave.domain.repository.AccountRepository
 import com.maxrave.domain.repository.AlbumRepository
+import com.maxrave.domain.repository.AnalyticsRepository
 import com.maxrave.domain.repository.ArtistRepository
 import com.maxrave.domain.repository.CommonRepository
 import com.maxrave.domain.repository.HomeRepository
@@ -85,5 +87,9 @@ val repositoryModule =
 
         single<UpdateRepository>(createdAtStart = true) {
             UpdateRepositoryImpl(get())
+        }
+
+        single<AnalyticsRepository>(createdAtStart = true) {
+            AnalyticsRepositoryImpl(get())
         }
     }

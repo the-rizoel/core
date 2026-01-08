@@ -1,4 +1,4 @@
-package com.maxrave.data.db
+package com.maxrave.data.db.datasource
 
 import DatabaseDao
 import com.maxrave.domain.data.entities.AlbumEntity
@@ -514,7 +514,9 @@ internal class LocalDataSource(
         offset,
     )
 
-    suspend fun updatePodcastInLibraryNow(id: String) = databaseDao.updatePodcastInLibrary(id, now())
+    suspend fun updatePodcastInLibraryNow(id: String) = databaseDao.updatePodcastInLibrary(id,
+        now()
+    )
 
     suspend fun insertYourYouTubePlaylist(yourYouTubePlaylist: YourYouTubePlaylistList) =
         databaseDao.insertYourYouTubePlaylist(yourYouTubePlaylist)

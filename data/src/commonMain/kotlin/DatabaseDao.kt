@@ -27,6 +27,7 @@ import com.maxrave.domain.data.entities.SongEntity
 import com.maxrave.domain.data.entities.SongInfoEntity
 import com.maxrave.domain.data.entities.TranslatedLyricsEntity
 import com.maxrave.domain.data.entities.YourYouTubePlaylistList
+import com.maxrave.domain.data.entities.analytics.PlaybackEventEntity
 import com.maxrave.domain.data.type.PlaylistType
 import com.maxrave.domain.data.type.RecentlyType
 import com.maxrave.domain.extension.now
@@ -794,4 +795,24 @@ interface DatabaseDao {
 
     @Query("DELETE FROM your_youtube_playlist_list")
     suspend fun deleteAllYourYouTubePlaylist()
+
+    // Playback Event
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertPlaybackEvent(playbackEventEntity: PlaybackEventEntity): Long
+
+    @Query("SELECT * FROM playback_event ORDER BY timestamp DESC LIMIT :limit OFFSET :offset")
+    suspend fun getPlaybackEventsByOffset(
+        offset: Int,
+        limit: Int
+    ): List<PlaybackEventEntity>
+
+    @Query("SELECT * FROM playback_event WHERE timestamp > :cutoffTimestamp ORDER BY timestamp DESC LIMIT :limit OFFSET :offset")
+    suspend fun getPlaybackEventsByOffsetAndTimestamp(
+        offset: Int,
+        limit: Int,
+        cutoffTimestamp: LocalDateTime
+    ): List<PlaybackEventEntity>
+
+    @Query("DELETE FROM playback_event WHERE timestamp < :cutoffTimestamp")
+    suspend fun deleteOldPlaybackEvents(cutoffTimestamp: LocalDateTime)
 }

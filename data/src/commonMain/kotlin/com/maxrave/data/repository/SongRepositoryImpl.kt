@@ -2,7 +2,7 @@ package com.maxrave.data.repository
 
 import com.maxrave.common.MERGING_DATA_TYPE
 import com.maxrave.common.QUALITY
-import com.maxrave.data.db.LocalDataSource
+import com.maxrave.data.db.datasource.LocalDataSource
 import com.maxrave.data.extension.getFullDataFromDB
 import com.maxrave.data.mapping.toListTrack
 import com.maxrave.data.mapping.toSongItemForDownload

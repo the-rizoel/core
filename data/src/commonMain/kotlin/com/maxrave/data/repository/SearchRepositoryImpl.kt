@@ -1,6 +1,6 @@
 package com.maxrave.data.repository
 
-import com.maxrave.data.db.LocalDataSource
+import com.maxrave.data.db.datasource.LocalDataSource
 import com.maxrave.data.mapping.toDomainSearchSuggestions
 import com.maxrave.data.parser.parsePodcast
 import com.maxrave.data.parser.search.parseSearchAlbum

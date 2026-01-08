@@ -1,6 +1,6 @@
 package com.maxrave.data.repository
 
-import com.maxrave.data.db.LocalDataSource
+import com.maxrave.data.db.datasource.LocalDataSource
 import com.maxrave.data.mapping.toDomainAccountInfo
 import com.maxrave.domain.data.entities.GoogleAccountEntity
 import com.maxrave.domain.data.model.account.AccountInfo

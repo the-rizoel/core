@@ -1,6 +1,6 @@
 package com.maxrave.data.repository
 
-import com.maxrave.data.db.LocalDataSource
+import com.maxrave.data.db.datasource.LocalDataSource
 import com.maxrave.data.extension.getFullDataFromDB
 import com.maxrave.data.parser.parseArtistData
 import com.maxrave.domain.data.entities.ArtistEntity

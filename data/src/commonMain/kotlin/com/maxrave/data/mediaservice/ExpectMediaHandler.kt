@@ -2,6 +2,7 @@ package com.maxrave.data.mediaservice
 
 import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.mediaservice.handler.MediaPlayerHandler
+import com.maxrave.domain.repository.AnalyticsRepository
 import com.maxrave.domain.repository.LocalPlaylistRepository
 import com.maxrave.domain.repository.SongRepository
 import com.maxrave.domain.repository.StreamRepository
@@ -12,5 +13,6 @@ expect fun createMediaServiceHandler(
     songRepository: SongRepository,
     streamRepository: StreamRepository,
     localPlaylistRepository: LocalPlaylistRepository,
+    analyticsRepository: AnalyticsRepository,
     coroutineScope: CoroutineScope,
 ): MediaPlayerHandler
