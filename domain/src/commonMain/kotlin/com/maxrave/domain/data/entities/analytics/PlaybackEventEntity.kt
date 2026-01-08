@@ -12,5 +12,6 @@ data class PlaybackEventEntity(
     val videoId: String = "",
     val channelIds: List<String> = emptyList(),
     val albumBrowseId: String? = null,
-    val durationPlayedPercent: Int = 0, // 0 - 100
+    val durationSecond: Int = 0, // 0 - 100
+    val listenedSecond: Int = 0, // in seconds
 )

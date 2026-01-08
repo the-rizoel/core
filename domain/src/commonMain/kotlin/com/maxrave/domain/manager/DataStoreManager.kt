@@ -25,9 +25,11 @@ interface DataStoreManager {
     suspend fun setQuality(quality: String)
 
     val downloadQuality: Flow<String>
+
     suspend fun setDownloadQuality(quality: String)
 
     val videoDownloadQuality: Flow<String>
+
     suspend fun setVideoDownloadQuality(quality: String)
 
     val language: Flow<String>
@@ -189,9 +191,11 @@ interface DataStoreManager {
     suspend fun setEndlessQueue(endlessQueue: Boolean)
 
     val keepYouTubePlaylistOffline: Flow<String>
+
     suspend fun setKeepYouTubePlaylistOffline(keep: Boolean)
 
     val combineLocalAndYouTubeLiked: Flow<String>
+
     suspend fun setCombineLocalAndYouTubeLiked(combine: Boolean)
 
     val shouldShowLogInRequiredAlert: Flow<String>
@@ -298,6 +302,10 @@ interface DataStoreManager {
     val richPresenceEnabled: Flow<String>
 
     suspend fun setRichPresenceEnabled(enabled: Boolean)
+
+    val localTrackingEnabled: Flow<String>
+
+    suspend fun setLocalTrackingEnabled(enabled: Boolean)
 
     enum class ProxyType {
         PROXY_TYPE_HTTP,

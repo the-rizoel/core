@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 21,
-    "identityHash": "3f08edf3ef5dd1497fe3d0b76c9acf16",
+    "identityHash": "ba0d843b54751cfe3343a8f120ecfdbe",
     "entities": [
       {
         "tableName": "new_format",
@@ -1184,7 +1184,7 @@
       },
       {
         "tableName": "playback_event",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`eventId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `timestamp` INTEGER NOT NULL, `videoId` TEXT NOT NULL, `channelIds` TEXT NOT NULL, `albumBrowseId` TEXT, `durationPlayedPercent` INTEGER NOT NULL)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`eventId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `timestamp` INTEGER NOT NULL, `videoId` TEXT NOT NULL, `channelIds` TEXT NOT NULL, `albumBrowseId` TEXT, `durationSecond` INTEGER NOT NULL, `listenedSecond` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "eventId",
@@ -1216,8 +1216,14 @@
             "affinity": "TEXT"
           },
           {
-            "fieldPath": "durationPlayedPercent",
-            "columnName": "durationPlayedPercent",
+            "fieldPath": "durationSecond",
+            "columnName": "durationSecond",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "listenedSecond",
+            "columnName": "listenedSecond",
             "affinity": "INTEGER",
             "notNull": true
           }
@@ -1232,7 +1238,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '3f08edf3ef5dd1497fe3d0b76c9acf16')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ba0d843b54751cfe3343a8f120ecfdbe')"
     ]
   }
 }

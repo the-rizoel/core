@@ -24,6 +24,7 @@ import com.maxrave.common.TITLE
 import com.maxrave.data.db.Converters
 import com.maxrave.domain.data.entities.NewFormatEntity
 import com.maxrave.domain.data.entities.SongEntity
+import com.maxrave.domain.data.entities.analytics.PlaybackEventEntity
 import com.maxrave.domain.data.model.browse.album.Track
 import com.maxrave.domain.data.model.mediaService.SponsorSkipSegments
 import com.maxrave.domain.data.model.searchResult.songs.Artist
@@ -134,9 +135,18 @@ internal class MediaServiceHandlerImpl(
                 isShuffle = player.shuffleModeEnabled,
                 repeatState =
                     when (player.repeatMode) {
-                        PlayerConstants.REPEAT_MODE_ONE -> RepeatState.One
-                        PlayerConstants.REPEAT_MODE_ALL -> RepeatState.All
-                        PlayerConstants.REPEAT_MODE_OFF -> RepeatState.None
+                        PlayerConstants.REPEAT_MODE_ONE -> {
+                            RepeatState.One
+                        }
+
+                        PlayerConstants.REPEAT_MODE_ALL -> {
+                            RepeatState.All
+                        }
+
+                        PlayerConstants.REPEAT_MODE_OFF -> {
+                            RepeatState.None
+                        }
+
                         else -> {
                             RepeatState.None
                         }
@@ -246,9 +256,18 @@ internal class MediaServiceHandlerImpl(
             player.shuffleModeEnabled = shuffleKey == TRUE
             player.repeatMode =
                 when (repeatKey) {
-                    DataStoreManager.REPEAT_ONE -> PlayerConstants.REPEAT_MODE_ONE
-                    DataStoreManager.REPEAT_ALL -> PlayerConstants.REPEAT_MODE_ALL
-                    DataStoreManager.REPEAT_MODE_OFF -> PlayerConstants.REPEAT_MODE_OFF
+                    DataStoreManager.REPEAT_ONE -> {
+                        PlayerConstants.REPEAT_MODE_ONE
+                    }
+
+                    DataStoreManager.REPEAT_ALL -> {
+                        PlayerConstants.REPEAT_MODE_ALL
+                    }
+
+                    DataStoreManager.REPEAT_MODE_OFF -> {
+                        PlayerConstants.REPEAT_MODE_OFF
+                    }
+
                     else -> {
                         PlayerConstants.REPEAT_MODE_OFF
                     }
@@ -666,6 +685,17 @@ internal class MediaServiceHandlerImpl(
                     delay(500)
                     _simpleMediaState.value =
                         SimpleMediaState.Loading(player.bufferedPercentage, player.duration)
+                    val current = nowPlayingState.value.songEntity
+                    if (current?.durationSeconds == 0 && player.duration > 0L) {
+                        _nowPlayingState.update {
+                            it.copy(
+                                songEntity =
+                                    current.copy(
+                                        durationSeconds = (player.duration / 1000).toInt(),
+                                    ),
+                            )
+                        }
+                    }
                 }
             }
     }
@@ -684,8 +714,15 @@ internal class MediaServiceHandlerImpl(
     override suspend fun onPlayerEvent(playerEvent: PlayerEvent) {
         when (playerEvent) {
             is PlayerEvent.UpdateVolume -> {}
-            PlayerEvent.Backward -> player.seekBack()
-            PlayerEvent.Forward -> player.seekForward()
+
+            PlayerEvent.Backward -> {
+                player.seekBack()
+            }
+
+            PlayerEvent.Forward -> {
+                player.seekForward()
+            }
+
             PlayerEvent.PlayPause -> {
                 if (player.isPlaying) {
                     player.pause()
@@ -712,7 +749,10 @@ internal class MediaServiceHandlerImpl(
                 _nowPlayingState.value = NowPlayingTrackState.initial()
             }
 
-            is PlayerEvent.UpdateProgress -> player.seekTo((player.duration * playerEvent.newProgress / 100).toLong())
+            is PlayerEvent.UpdateProgress -> {
+                player.seekTo((player.duration * playerEvent.newProgress / 100).toLong())
+            }
+
             PlayerEvent.Shuffle -> {
                 if (player.shuffleModeEnabled) {
                     player.shuffleModeEnabled = false
@@ -2145,6 +2185,12 @@ internal class MediaServiceHandlerImpl(
         mediaItem: GenericMediaItem?,
         reason: Int,
     ) {
+        Logger.w(TAG, "Checking current state before transition ${simpleMediaState.value}")
+        val lastPlayed = nowPlayingState.value.songEntity
+        val currentState = simpleMediaState.value
+        if (currentState is SimpleMediaState.Progress && lastPlayed != null && lastPlayed.durationSeconds > 0) {
+            mayBeTrackingListeningLocal(lastPlayed, currentState.progress)
+        }
         Logger.w(TAG, "Smooth Switching Transition Current Position: ${player.currentPosition}")
         mayBeNormalizeVolume()
         Logger.w(TAG, "REASON onMediaItemTransition: $reason")
@@ -2177,6 +2223,38 @@ internal class MediaServiceHandlerImpl(
         updateNotification()
         if (player.currentMediaItemIndex == 0) {
             resetCrossfade()
+        }
+    }
+
+    private fun mayBeTrackingListeningLocal(
+        song: SongEntity,
+        currentPositionMillis: Long,
+    ) {
+        coroutineScope.launch {
+            val trackingEnabled = dataStoreManager.localTrackingEnabled.first() == TRUE
+            if (!trackingEnabled) {
+                return@launch
+            }
+            val percent = (currentPositionMillis / (song.durationSeconds * 1000f))
+            Logger.w(TAG, "${song.title} - $currentPositionMillis ms listened, duration: ${song.durationSeconds * 1000} ms, percent: $percent")
+            if (percent < 0.2f) {
+                Logger.d(TAG, "Not enough listening time for ${song.title}, skipping tracking")
+                return@launch
+            }
+            Logger.d(TAG, "Tracking listening for ${song.title} at position $currentPositionMillis ms")
+            analyticsRepository
+                .insertPlaybackEvent(
+                    PlaybackEventEntity(
+                        timestamp = now(),
+                        videoId = song.videoId,
+                        channelIds = song.artistId ?: emptyList(),
+                        albumBrowseId = song.albumId,
+                        durationSecond = song.durationSeconds,
+                        listenedSecond = (currentPositionMillis / 1000).toInt(),
+                    ),
+                ).collect {
+                    Logger.d(TAG, "Inserted playback event for ${song.title}: $it")
+                }
         }
     }
 
@@ -2239,17 +2317,20 @@ internal class MediaServiceHandlerImpl(
     override fun onRepeatModeChanged(repeatMode: Int) {
         updateNextPreviousTrackAvailability()
         when (repeatMode) {
-            PlayerConstants.REPEAT_MODE_OFF ->
+            PlayerConstants.REPEAT_MODE_OFF -> {
                 _controlState.value =
                     _controlState.value.copy(repeatState = RepeatState.None)
+            }
 
-            PlayerConstants.REPEAT_MODE_ONE ->
+            PlayerConstants.REPEAT_MODE_ONE -> {
                 _controlState.value =
                     _controlState.value.copy(repeatState = RepeatState.One)
+            }
 
-            PlayerConstants.REPEAT_MODE_ALL ->
+            PlayerConstants.REPEAT_MODE_ALL -> {
                 _controlState.value =
                     _controlState.value.copy(repeatState = RepeatState.All)
+            }
         }
     }
 

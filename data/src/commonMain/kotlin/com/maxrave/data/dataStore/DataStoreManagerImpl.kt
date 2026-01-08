@@ -1206,9 +1206,10 @@ internal class DataStoreManagerImpl(
         }
     }
 
-    override val discordToken: Flow<String> = settingsDataStore.data.map { preferences ->
-        preferences[DISCORD_TOKEN] ?: ""
-    }
+    override val discordToken: Flow<String> =
+        settingsDataStore.data.map { preferences ->
+            preferences[DISCORD_TOKEN] ?: ""
+        }
 
     override suspend fun setDiscordToken(token: String) {
         withContext(Dispatchers.IO) {
@@ -1218,14 +1219,28 @@ internal class DataStoreManagerImpl(
         }
     }
 
-    override val richPresenceEnabled: Flow<String> = settingsDataStore.data.map { preferences ->
-        preferences[RICH_PRESENCE] ?: FALSE
-    }
+    override val richPresenceEnabled: Flow<String> =
+        settingsDataStore.data.map { preferences ->
+            preferences[RICH_PRESENCE] ?: FALSE
+        }
 
     override suspend fun setRichPresenceEnabled(enabled: Boolean) {
         withContext(Dispatchers.IO) {
             settingsDataStore.edit { settings ->
                 settings[RICH_PRESENCE] = if (enabled) TRUE else FALSE
+            }
+        }
+    }
+
+    override val localTrackingEnabled: Flow<String> =
+        settingsDataStore.data.map { preferences ->
+            preferences[LOCAL_TRACKING_ENABLED] ?: FALSE
+        }
+
+    override suspend fun setLocalTrackingEnabled(enabled: Boolean) {
+        withContext(Dispatchers.IO) {
+            settingsDataStore.edit { settings ->
+                settings[LOCAL_TRACKING_ENABLED] = if (enabled) TRUE else FALSE
             }
         }
     }
@@ -1313,6 +1328,8 @@ internal class DataStoreManagerImpl(
 
         val DISCORD_TOKEN = stringPreferencesKey("discord_token")
         val RICH_PRESENCE = stringPreferencesKey("rich_presence")
+
+        val LOCAL_TRACKING_ENABLED = stringPreferencesKey("local_tracking_enabled")
     }
 }
 
