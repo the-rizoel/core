@@ -474,6 +474,17 @@ internal class LyricsCanvasRepositoryImpl(
                 }
         }.flowOn(Dispatchers.IO)
 
+    override fun voteSimpMusicLyrics(lyricsId: String, upvote: Boolean): Flow<Resource<String>> = flow {
+        simpMusicLyrics.voteLyrics(lyricsId, upvote)
+            .onSuccess {
+                Logger.d(simpMusicLyricsTag, "Vote Lyrics Success: $it")
+                emit(Resource.Success(it.id))
+            }.onFailure {
+                Logger.e(simpMusicLyricsTag, "Vote Lyrics Error: ${it.message}")
+                emit(Resource.Error<String>(it.message ?: "Failed to vote lyrics"))
+            }
+    }.flowOn(Dispatchers.IO)
+
     override fun voteSimpMusicTranslatedLyrics(
         translatedLyricsId: String,
         upvote: Boolean,
