@@ -205,6 +205,7 @@ internal class LyricsCanvasRepositoryImpl(
                                                 emit(Resource.Error<CanvasResult>("Not found"))
                                             }
                                         }.onFailure {
+                                            Logger.e("Canvas", "Error: ${it.message}")
                                             it.printStackTrace()
                                             emit(Resource.Error<CanvasResult>(it.message ?: "Not found"))
                                         }
