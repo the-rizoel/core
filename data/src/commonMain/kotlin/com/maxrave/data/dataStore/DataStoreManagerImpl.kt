@@ -1001,6 +1001,32 @@ internal class DataStoreManagerImpl(
         }
     }
 
+    override val customOpenAIBaseUrl: Flow<String> =
+        settingsDataStore.data.map { preferences ->
+            preferences[CUSTOM_OPENAI_BASE_URL] ?: ""
+        }
+
+    override suspend fun setCustomOpenAIBaseUrl(baseUrl: String) {
+        withContext(Dispatchers.IO) {
+            settingsDataStore.edit { settings ->
+                settings[CUSTOM_OPENAI_BASE_URL] = baseUrl
+            }
+        }
+    }
+
+    override val customOpenAIHeaders: Flow<String> =
+        settingsDataStore.data.map { preferences ->
+            preferences[CUSTOM_OPENAI_HEADERS] ?: ""
+        }
+
+    override suspend fun setCustomOpenAIHeaders(headers: String) {
+        withContext(Dispatchers.IO) {
+            settingsDataStore.edit { settings ->
+                settings[CUSTOM_OPENAI_HEADERS] = headers
+            }
+        }
+    }
+
     override val localPlaylistFilter: Flow<String> =
         settingsDataStore.data.map { preferences ->
             preferences[LOCAL_PLAYLIST_FILTER] ?: LOCAL_PLAYLIST_FILTER_OLDER_FIRST
@@ -1364,6 +1390,8 @@ internal class DataStoreManagerImpl(
         val AI_API_KEY = stringPreferencesKey("ai_gemini_api_key")
 
         val CUSTOM_MODEL_ID = stringPreferencesKey("custom_model_id")
+        val CUSTOM_OPENAI_BASE_URL = stringPreferencesKey("custom_openai_base_url")
+        val CUSTOM_OPENAI_HEADERS = stringPreferencesKey("custom_openai_headers")
 
         val USE_AI_TRANSLATION = stringPreferencesKey("use_ai_translation")
 
