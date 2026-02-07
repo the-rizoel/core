@@ -2,6 +2,7 @@ package com.maxrave.media_jvm_ui.ui
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -58,6 +59,7 @@ import java.net.URI
 import java.util.concurrent.TimeUnit
 import javax.swing.BoxLayout
 import javax.swing.JPanel
+import javax.swing.Box as SwingBox
 
 @Composable
 fun MediaPlayerViewWithUrl(
@@ -100,17 +102,16 @@ fun MediaPlayerViewWithUrl(
 
     Box(
         modifier
-            .graphicsLayer { clip = true }
-            .onGloballyPositioned {
-                sizePx =
-                    it.size.width to it.size.height
-            },
+            .then(
+                Modifier
+                    .graphicsLayer { clip = true },
+            ),
     ) {
         if (gsVideoComponent != null) {
             SwingPanel(
                 factory = {
                     JPanel().apply {
-                        layout = BoxLayout(this, BoxLayout.PAGE_AXIS)
+                        layout = BoxLayout(this, BoxLayout.LINE_AXIS)
                         background = java.awt.Color.BLACK
                         add(gsVideoComponent)
                     }
