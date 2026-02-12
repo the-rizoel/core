@@ -353,10 +353,9 @@ internal class SongRepositoryImpl(
         path: String,
         videoId: String,
         isVideo: Boolean,
-    ): Flow<DownloadProgress> {
-        val shouldYtdlp = runBlocking { dataStoreManager.quality.first() } == QUALITY.items.last().toString()
-        return youTube
-            .download(track.toSongItemForDownload(), path, videoId, isVideo, shouldYtdlp)
+    ): Flow<DownloadProgress> =
+        youTube
+            .download(track.toSongItemForDownload(), path, videoId, isVideo)
             .map {
                 DownloadProgress(
                     audioDownloadProgress = it.audioDownloadProgress,
@@ -368,7 +367,6 @@ internal class SongRepositoryImpl(
                     isDone = it.isDone,
                 )
             }
-    }
 
     override fun getRelatedData(videoId: String): Flow<Resource<Pair<List<Track>, String?>>> =
         flow {

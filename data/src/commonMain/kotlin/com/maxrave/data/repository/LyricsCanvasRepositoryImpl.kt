@@ -18,7 +18,9 @@ import com.maxrave.domain.utils.Resource
 import com.maxrave.domain.utils.connectArtists
 import com.maxrave.domain.utils.toListName
 import com.maxrave.domain.utils.toPlainLrcString
+import com.maxrave.domain.utils.toRichSyncLrcString
 import com.maxrave.domain.utils.toSyncedLrcString
+import com.maxrave.domain.utils.toSyncedLyrics
 import com.maxrave.kotlinytmusicscraper.YouTube
 import com.maxrave.logger.Logger
 import com.maxrave.spotify.Spotify
@@ -34,6 +36,7 @@ import org.simpmusic.aiservice.AiClient
 import org.simpmusic.lyrics.SimpMusicLyricsClient
 import org.simpmusic.lyrics.models.request.LyricsBody
 import org.simpmusic.lyrics.models.request.TranslatedLyricsBody
+import org.simpmusic.lyrics.parser.parseTtmlLyrics
 import kotlin.math.abs
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -398,6 +401,50 @@ internal class LyricsCanvasRepositoryImpl(
                 }
         }.flowOn(Dispatchers.IO)
 
+    override fun getBetterLyrics(
+        artist: String,
+        track: String,
+        duration: Int?,
+    ): Flow<Resource<Lyrics>> =
+        flow {
+            Logger.w("Lyrics", "getBetterLyrics: $artist $track")
+            val qartist =
+                artist
+                    .replace(
+                        Regex("\\((feat\\.|ft.|cùng với|con|mukana|com|avec|合作音乐人: ) "),
+                        " ",
+                    ).replace(
+                        Regex("( và | & | и | e | und |, |和| dan)"),
+                        " ",
+                    ).replace("  ", " ")
+                    .replace(Regex("([()])"), "")
+                    .replace(".", " ")
+            val qtrack =
+                track
+                    .replace(
+                        Regex("\\((feat\\.|ft.|cùng với|con|mukana|com|avec|合作音乐人: ) "),
+                        " ",
+                    ).replace(
+                        Regex("( và | & | и | e | und |, |和| dan)"),
+                        " ",
+                    ).replace("  ", " ")
+                    .replace(Regex("([()])"), "")
+                    .replace(".", " ")
+            simpMusicLyrics
+                .searchBetterLyrics(qtrack, qartist, duration)
+                .onSuccess { ttml ->
+                    if (ttml.isNullOrEmpty()) {
+                        emit(Resource.Error<Lyrics>("No BetterLyrics found"))
+                        return@onSuccess
+                    }
+                    val lyrics = parseTtmlLyrics(ttml).toLyrics()
+                    emit(Resource.Success(lyrics))
+                }.onFailure {
+                    it.printStackTrace()
+                    emit(Resource.Error<Lyrics>("BetterLyrics search failed"))
+                }
+        }.flowOn(Dispatchers.IO)
+
     override fun getAITranslationLyrics(
         lyrics: Lyrics,
         targetLanguage: String,
@@ -529,6 +576,20 @@ internal class LyricsCanvasRepositoryImpl(
                 )
                 return@flow
             }
+            val syncedLyric =
+                if (lyrics.syncType == "LINE_SYNCED") {
+                    lyrics.toSyncedLrcString()
+                } else if (lyrics.syncType == "RICH_SYNCED") {
+                    lyrics.toSyncedLyrics().toSyncedLrcString()
+                } else {
+                    null
+                }
+            val richSyncedLyric =
+                if (lyrics.syncType == "RICH_SYNCED") {
+                    lyrics.toRichSyncLrcString()
+                } else {
+                    null
+                }
             val (contributorName, contributorEmail) = dataStoreManager.contributorName.first() to dataStoreManager.contributorEmail.first()
             simpMusicLyrics
                 .insertLyrics(
@@ -539,8 +600,8 @@ internal class LyricsCanvasRepositoryImpl(
                         albumName = track.album?.name ?: "",
                         durationSeconds = duration,
                         plainLyric = lyrics.toPlainLrcString() ?: "",
-                        syncedLyrics = lyrics.toSyncedLrcString(),
-                        richSyncLyrics = "",
+                        syncedLyrics = syncedLyric,
+                        richSyncLyrics = richSyncedLyric,
                         contributor = contributorName,
                         contributorEmail = contributorEmail,
                     ),

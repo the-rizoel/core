@@ -175,10 +175,6 @@ class Ytmusic {
             }
         }
 
-    fun updateYtdlp() {
-        extractor.update()
-    }
-
     internal fun HttpRequestBuilder.mask(value: String = "*") = header("X-Goog-FieldMask", value)
 
     @OptIn(ExperimentalTime::class)
@@ -377,26 +373,6 @@ class Ytmusic {
     }
 
     suspend fun test403Error(url: String): Boolean = httpClient.get(url).status.value in 200..299
-
-    suspend fun ytdlpGetStreamUrl(
-        videoId: String,
-        poToken: String?,
-        clientName: String,
-        json: Json,
-        useCookie: Boolean,
-    ): YtdlpVideoInfo? =
-        withContext(Dispatchers.IO) {
-            Logger.d(TAG, "ytdlpGetStreamUrl: videoId: $videoId, poToken: $poToken, clientName: $clientName")
-            val result =
-                extractor.ytdlpGetStreamUrl(
-                    videoId = videoId,
-                    poToken = null,
-                    clientName = null,
-                    cookiePath = if (useCookie) cookiePath?.toString() else null,
-                )
-            val data = result?.let { json.decodeFromString<YtdlpVideoInfo>(it) }
-            return@withContext data
-        }
 
     suspend fun player(
         client: YouTubeClient,

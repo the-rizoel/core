@@ -165,4 +165,17 @@ class SimpMusicLyrics {
         buildDefaultHeaders()
         parameter("q", "$q_artist $q_track")
     }
+
+    suspend fun searchBetterLyrics(
+        q_track: String,
+        q_artist: String,
+        durationSeconds: Int?,
+    ) = httpClient.get("https://lyrics-api.boidu.dev/getLyrics") {
+        buildDefaultHeaders()
+        parameter("s", q_track)
+        parameter("a", q_artist)
+        durationSeconds?.let {
+            parameter("d", it)
+        }
+    }
 }

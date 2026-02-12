@@ -110,7 +110,7 @@ internal class StreamRepositoryImpl(
                 }
             // 134, 136, 137
             youTube
-                .player(videoId, shouldYtdlp = itag == 774, noLogIn = muxed)
+                .player(videoId, noLogIn = muxed)
                 .onSuccess { data ->
                     val response = data.second
                     if (data.third == MediaType.Song) {

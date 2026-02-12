@@ -1,7 +1,7 @@
 package com.maxrave.data.repository
 
-import com.maxrave.data.db.datasource.LocalDataSource
 import com.maxrave.data.db.MusicDatabase
+import com.maxrave.data.db.datasource.LocalDataSource
 import com.maxrave.data.io.fileSystem
 import com.maxrave.domain.data.entities.NotificationEntity
 import com.maxrave.domain.data.model.cookie.CookieItem
@@ -41,7 +41,10 @@ internal class CommonRepositoryImpl(
     private val aiClient: AiClient,
 ) : CommonRepository {
     @OptIn(ExperimentalTime::class)
-    override fun init(cookiePath: String, dataStoreManager: DataStoreManager) {
+    override fun init(
+        cookiePath: String,
+        dataStoreManager: DataStoreManager,
+    ) {
         youTube.cookiePath = cookiePath.toPath()
         coroutineScope.launch {
             val resetSpotifyToken =
@@ -183,7 +186,9 @@ internal class CommonRepositoryImpl(
                             if (headers.isNotEmpty()) {
                                 try {
                                     // Parse JSON format: {"key1":"value1","key2":"value2"}
-                                    headers.trim().removeSurrounding("{", "}")
+                                    headers
+                                        .trim()
+                                        .removeSurrounding("{", "}")
                                         .split(",")
                                         .mapNotNull { pair ->
                                             val parts = pair.split(":")
@@ -217,12 +222,6 @@ internal class CommonRepositoryImpl(
             aiCustomBaseUrlJob.join()
             aiCustomHeadersJob.join()
         }
-
-        coroutineScope.launch {
-            withContext(Dispatchers.IO) {
-                youTube.updateYtdlp()
-            }
-        }
     }
 
     // Database
@@ -230,7 +229,9 @@ internal class CommonRepositoryImpl(
         database.close()
     }
 
-    override fun getDatabasePath() = com.maxrave.data.db.getDatabasePath()
+    override fun getDatabasePath() =
+        com.maxrave.data.db
+            .getDatabasePath()
 
     override suspend fun databaseDaoCheckpoint() = localDataSource.checkpoint()
 
@@ -277,7 +278,7 @@ internal class CommonRepositoryImpl(
      */
     override suspend fun getCookiesFromInternalDatabase(
         url: String,
-        packageName: String
+        packageName: String,
     ): CookieItem =
         withContext(Dispatchers.IO) {
             return@withContext getCookies(
@@ -289,5 +290,5 @@ internal class CommonRepositoryImpl(
 
 expect fun getCookies(
     url: String,
-    packageName: String
+    packageName: String,
 ): CookieItem

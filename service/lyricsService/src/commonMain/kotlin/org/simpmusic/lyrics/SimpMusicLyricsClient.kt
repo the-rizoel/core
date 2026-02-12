@@ -8,6 +8,7 @@ import io.ktor.client.statement.HttpResponse
 import org.simpmusic.lyrics.models.request.LyricsBody
 import org.simpmusic.lyrics.models.request.TranslatedLyricsBody
 import org.simpmusic.lyrics.models.response.BaseResponse
+import org.simpmusic.lyrics.models.response.BetterLyricsResponse
 import org.simpmusic.lyrics.models.response.LrclibObject
 import org.simpmusic.lyrics.models.response.LyricsResponse
 import org.simpmusic.lyrics.models.response.TranslatedLyricsResponse
@@ -16,12 +17,12 @@ import org.simpmusic.lyrics.parser.parseUnsyncedLyrics
 import kotlin.math.abs
 
 private const val TAG = "SimpMusicLyricsClient"
+
 class SimpMusicLyricsClient {
     private val algorithm = ""
 
     private val hmacService = Hmac("HmacSHA256", "simpmusic-lyrics")
     private val lyricsService = SimpMusicLyrics()
-
     private var insertingLyrics: Pair<String?, Boolean> = (null to false)
     private val isInsertingLyrics: Boolean
         get() = insertingLyrics.second
@@ -134,6 +135,21 @@ class SimpMusicLyricsClient {
         } else {
             null
         }
+    }
+
+    suspend fun searchBetterLyrics(
+        q_track: String,
+        q_artist: String,
+        durationSeconds: Int?,
+    ) = runCatching {
+        val rs =
+            lyricsService
+                .searchBetterLyrics(
+                    q_track = q_track,
+                    q_artist = q_artist,
+                    durationSeconds = durationSeconds,
+                ).body<BetterLyricsResponse>()
+        rs.ttml
     }
 
     private suspend inline fun <reified T> HttpResponse.bodyOrThrow(): T {

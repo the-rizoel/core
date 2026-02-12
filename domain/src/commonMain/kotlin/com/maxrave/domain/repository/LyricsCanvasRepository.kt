@@ -59,6 +59,12 @@ interface LyricsCanvasRepository {
         duration: Int?,
     ): Flow<Resource<Lyrics>>
 
+    fun getBetterLyrics(
+        artist: String,
+        track: String,
+        duration: Int?,
+    ): Flow<Resource<Lyrics>>
+
     fun getAITranslationLyrics(
         lyrics: Lyrics,
         targetLanguage: String,

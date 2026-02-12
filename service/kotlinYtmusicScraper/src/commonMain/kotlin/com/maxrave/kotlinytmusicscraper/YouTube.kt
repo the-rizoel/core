@@ -210,14 +210,6 @@ class YouTube {
         }
     }
 
-    fun updateYtdlp() {
-        runCatching {
-            ytMusic.updateYtdlp()
-        }.onFailure {
-            it.printStackTrace()
-        }
-    }
-
     private val listPipedInstances =
         listOf(
             "https://pipedapi.nosebs.ru",
@@ -843,17 +835,17 @@ class YouTube {
      * @param videoId the videoId of song
      * @return a [Result]<[List]<[SkipSegments]>> object
      */
-    suspend fun getSkipSegments(videoId: String) =
+    suspend fun getSkipSegments(videoId: String): Result<List<SkipSegments>> =
         runCatching {
             ytMusic.getSkipSegments(videoId).body<List<SkipSegments>>()
         }
 
-    suspend fun checkForGithubReleaseUpdate() =
+    suspend fun checkForGithubReleaseUpdate(): Result<GithubResponse> =
         runCatching {
             ytMusic.checkForGithubReleaseUpdate().body<GithubResponse>()
         }
 
-    suspend fun checkForFdroidUpdate() =
+    suspend fun checkForFdroidUpdate(): Result<FdroidResponse> =
         runCatching {
             ytMusic.checkForFdroidUpdate().body<FdroidResponse>()
         }
@@ -975,7 +967,9 @@ class YouTube {
                                     )
                                 }
 
-                                else -> null
+                                else -> {
+                                    null
+                                }
                             }
                         }.orEmpty(),
             )
@@ -1158,112 +1152,7 @@ class YouTube {
         }
     }
 
-    suspend fun ytDlpPlayer(
-        videoId: String,
-        tempRes: PlayerResponse,
-        useCookie: Boolean = false,
-    ): PlayerResponse? {
-        val listUrlSig = mutableListOf<String>()
-        var decodedSigResponse: PlayerResponse?
-        var sigResponse: PlayerResponse?
-        Logger.d(TAG, "YouTube TempRes ${tempRes.playabilityStatus}")
-        if (tempRes.playabilityStatus.status != "OK") {
-            return null
-        } else {
-            sigResponse = tempRes
-        }
-        val streamInfo = ytMusic.ytdlpGetStreamUrl(videoId, null, "tv", poTokenJsonDeserializer, useCookie) ?: return null
-        val streamsList = streamInfo.formats.takeIf { !it.isNullOrEmpty() } ?: return null
-        streamsList.forEach {
-            Logger.d(TAG, "YouTube Ytdlp Stream ${it?.formatId} ${it?.url}")
-        }
-        decodedSigResponse =
-            sigResponse.copy(
-                streamingData =
-                    sigResponse.streamingData?.copy(
-                        formats =
-                            sigResponse.streamingData.formats?.map { format ->
-                                format.copy(
-                                    url = streamsList.find { it?.formatId == format.itag.toString() }?.url,
-                                )
-                            },
-                        adaptiveFormats =
-                            sigResponse.streamingData.adaptiveFormats.map { adaptiveFormats ->
-                                adaptiveFormats.copy(
-                                    url = streamsList.find { it?.formatId == adaptiveFormats.itag.toString() }?.url,
-                                )
-                            },
-                    ),
-            )
-        decodedSigResponse =
-            decodedSigResponse.copy(
-                streamingData =
-                    decodedSigResponse.streamingData?.copy(
-                        formats =
-                            decodedSigResponse.streamingData.formats?.let { formats ->
-                                val copy = formats.toMutableList()
-                                streamInfo.formats
-                                    ?.filterNotNull()
-                                    ?.filter {
-                                        isManifestUrl(it.url ?: "")
-                                    }?.forEach { manifest ->
-                                        copy.add(
-                                            PlayerResponse.StreamingData.Format(
-                                                itag = manifest.formatId?.toInt() ?: 0,
-                                                url = manifest.url,
-                                                mimeType = "",
-                                                bitrate = 0,
-                                                width = manifest.width?.toInt(),
-                                                height = manifest.height?.toInt(),
-                                                contentLength = 0,
-                                                quality = "",
-                                                fps = 0,
-                                                qualityLabel = "",
-                                                averageBitrate = 0,
-                                                audioQuality = "",
-                                                approxDurationMs = "",
-                                                audioSampleRate = 0,
-                                                audioChannels = 0,
-                                                loudnessDb = 0.0,
-                                                lastModified = 0,
-                                                signatureCipher = "",
-                                            ),
-                                        )
-                                    }
-                                copy.filter { it.itag != 0 }
-                                copy
-                            },
-                    ),
-            )
-        listUrlSig.addAll(
-            (
-                decodedSigResponse
-                    .streamingData
-                    ?.adaptiveFormats
-                    ?.mapNotNull { it.url }
-                    ?.toMutableList() ?: mutableListOf()
-            ).apply {
-                decodedSigResponse
-                    .streamingData
-                    ?.formats
-                    ?.mapNotNull { it.url }
-                    ?.let { addAll(it) }
-            },
-        )
-        listUrlSig.forEach {
-            Logger.d(TAG, "YouTube Ytdlp URL $it")
-        }
-        val randomUrl = listUrlSig.randomOrNull() ?: return null
-        if (listUrlSig.isNotEmpty() && !is403Url(randomUrl)) {
-            Logger.d(TAG, "YouTube Ytdlp Found URL $randomUrl")
-            return decodedSigResponse
-        } else {
-            Logger.d(TAG, "YouTube Ytdlp No URL Found")
-            return null
-        }
-    }
-
-    suspend fun smartTubePlayer(
+    private suspend fun smartTubePlayer(
         videoId: String,
         tempRes: PlayerResponse,
     ): PlayerResponse? {
@@ -1454,7 +1343,6 @@ class YouTube {
         videoId: String,
         playlistId: String? = null,
         noLogIn: Boolean = false,
-        shouldYtdlp: Boolean = false,
     ): Result<Triple<String?, PlayerResponse, MediaType>> =
         runCatching {
             val cpn =
@@ -1583,8 +1471,6 @@ class YouTube {
                                 count++
                             }
                             res
-                        } else if (shouldYtdlp) {
-                            ytDlpPlayer(videoId, tempRes)
                         } else {
                             smartTubePlayer(videoId, tempRes) ?: newPipePlayer(videoId, tempRes)
                         }
@@ -2053,13 +1939,13 @@ class YouTube {
         val value: String,
     ) {
         companion object {
-            val FILTER_SONG = SearchFilter("EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D")
-            val FILTER_VIDEO = SearchFilter("EgWKAQIQAWoKEAkQChAFEAMQBA%3D%3D")
-            val FILTER_ALBUM = SearchFilter("EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D")
-            val FILTER_ARTIST = SearchFilter("EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D")
-            val FILTER_FEATURED_PLAYLIST = SearchFilter("EgeKAQQoADgBagwQDhAKEAMQBRAJEAQ%3D")
-            val FILTER_COMMUNITY_PLAYLIST = SearchFilter("EgeKAQQoAEABagoQAxAEEAoQCRAF")
-            val FILTER_PODCAST = SearchFilter("EgWKAQJQAWoIEBAQERADEBU%3D")
+            val FILTER_SONG: SearchFilter = SearchFilter("EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D")
+            val FILTER_VIDEO: SearchFilter = SearchFilter("EgWKAQIQAWoKEAkQChAFEAMQBA%3D%3D")
+            val FILTER_ALBUM: SearchFilter = SearchFilter("EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D")
+            val FILTER_ARTIST: SearchFilter = SearchFilter("EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D")
+            val FILTER_FEATURED_PLAYLIST: SearchFilter = SearchFilter("EgeKAQQoADgBagwQDhAKEAMQBRAJEAQ%3D")
+            val FILTER_COMMUNITY_PLAYLIST: SearchFilter = SearchFilter("EgeKAQQoAEABagoQAxAEEAoQCRAF")
+            val FILTER_PODCAST: SearchFilter = SearchFilter("EgWKAQJQAWoIEBAQERADEBU%3D")
         }
     }
 
@@ -2171,8 +2057,8 @@ class YouTube {
     private fun getNParam(listFormat: List<PlayerResponse.StreamingData.Format>): String? =
         listFormat
             .firstOrNull { it.itag == 251 }
-            ?.let {
-                val sc = it.signatureCipher ?: it.url ?: return null
+            ?.let { format ->
+                val sc = format.signatureCipher ?: format.url ?: return null
                 val params = parseQueryString(sc)
                 val url =
                     params["url"]?.let { URLBuilder(it) }
@@ -2188,12 +2074,11 @@ class YouTube {
         filePath: String,
         videoId: String,
         isVideo: Boolean = false,
-        shouldYtdlp: Boolean,
     ): Flow<DownloadProgress> =
         channelFlow {
             // Video if videoId is not null
             trySend(DownloadProgress(0.01f))
-            player(videoId = videoId, shouldYtdlp = shouldYtdlp, noLogIn = false)
+            player(videoId = videoId)
                 .onSuccess { playerResponse ->
                     val audioFormat =
                         listOf(

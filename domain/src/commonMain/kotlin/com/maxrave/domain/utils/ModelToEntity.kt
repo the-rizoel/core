@@ -13,6 +13,7 @@ import com.maxrave.domain.data.model.browse.artist.ResultSong
 import com.maxrave.domain.data.model.browse.artist.ResultVideo
 import com.maxrave.domain.data.model.browse.playlist.PlaylistBrowse
 import com.maxrave.domain.data.model.home.Content
+import com.maxrave.domain.data.model.metadata.Line
 import com.maxrave.domain.data.model.metadata.Lyrics
 import com.maxrave.domain.data.model.podcast.PodcastBrowse
 import com.maxrave.domain.data.model.searchResult.songs.Album
@@ -379,6 +380,57 @@ fun Lyrics.toSyncedLrcString(): String? {
 
         "[$minutes:$seconds.$milliseconds]$content"
     }
+}
+
+/**
+ * Reverse of [parseRichSyncLyrics]: converts RICH_SYNCED Lyrics back to the rich sync LRC string format.
+ *
+ * Output format (one per line):
+ * [MM:SS.mm] <MM:SS.mm>word <MM:SS.mm>word ...
+ */
+fun Lyrics.toRichSyncLrcString(): String? {
+    val lines = this.lines
+    if (lines.isNullOrEmpty() || this.syncType != "RICH_SYNCED") {
+        return null
+    }
+    return lines.joinToString("\n") { line ->
+        val startTimeMs = line.startTimeMs.toLongOrNull() ?: 0L
+        val minutes = (startTimeMs / 60000).toString().padStart(2, '0')
+        val seconds = ((startTimeMs % 60000) / 1000).toString().padStart(2, '0')
+        val centiseconds = ((startTimeMs % 1000) / 10).toString().padStart(2, '0')
+
+        "[$minutes:$seconds.$centiseconds] ${line.words}"
+    }
+}
+
+/**
+ * Converts RICH_SYNCED Lyrics to LINE_SYNCED Lyrics by stripping word-level <MM:SS.mm> timing
+ * from each line's words, keeping only the plain text and line-level timing.
+ */
+fun Lyrics.toSyncedLyrics(): Lyrics {
+    val lines = this.lines
+    if (lines.isNullOrEmpty() || this.syncType != "RICH_SYNCED") {
+        return this
+    }
+    val wordTimingRegex = Regex("""<\d{1,2}:\d{2}\.\d{2,3}>""")
+    val syncedLines = lines.map { line ->
+        val plainWords = line.words
+            .replace(wordTimingRegex, "")
+            .replace("  ", " ")
+            .trim()
+        Line(
+            endTimeMs = line.endTimeMs,
+            startTimeMs = line.startTimeMs,
+            syllables = line.syllables,
+            words = plainWords.ifBlank { "♫" },
+        )
+    }
+    return Lyrics(
+        error = this.error,
+        lines = syncedLines,
+        syncType = "LINE_SYNCED",
+        simpMusicLyrics = this.simpMusicLyrics,
+    )
 }
 
 fun Lyrics.toPlainLrcString(): String? {

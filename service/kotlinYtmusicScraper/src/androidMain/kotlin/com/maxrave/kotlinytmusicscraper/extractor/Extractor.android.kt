@@ -8,9 +8,6 @@ import com.liskovsoft.youtubeapi.videoinfo.V2.VideoInfoService
 import com.maxrave.kotlinytmusicscraper.models.SongItem
 import com.maxrave.kotlinytmusicscraper.models.response.DownloadProgress
 import com.maxrave.logger.Logger
-import com.yausername.youtubedl_android.YoutubeDL
-import com.yausername.youtubedl_android.YoutubeDLException
-import com.yausername.youtubedl_android.YoutubeDLRequest
 import okio.FileSystem
 import okio.IOException
 import okio.Path.Companion.toPath
@@ -19,47 +16,14 @@ import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.stream.StreamInfo
 
 private const val TAG = "Extractor"
+
 actual class Extractor {
     private val mAppService = AppService.instance()
     private val mVideoInfoService = VideoInfoService.instance()
     private var newPipeDownloader = NewPipeDownloaderImpl(proxy = null)
 
     actual fun init() {
-        try {
-            YoutubeDL.getInstance().init(getKoin().get())
-            YoutubeDL.getInstance()
-        } catch (e: YoutubeDLException) {
-            e.printStackTrace()
-        }
         NewPipe.init(newPipeDownloader)
-    }
-
-    actual fun update() {
-        YoutubeDL.getInstance().updateYoutubeDL(getKoin().get())
-    }
-
-    actual fun ytdlpGetStreamUrl(
-        videoId: String,
-        poToken: String?,
-        clientName: String?,
-        cookiePath: String?
-    ): String? {
-        val ytDlp = YoutubeDL.getInstance()
-        val ytRequest = YoutubeDLRequest("https://music.youtube.com/watch?v=$videoId")
-        if (!cookiePath.isNullOrEmpty()) {
-            ytRequest.addOption("--cookies", cookiePath)
-        }
-        ytRequest.addOption("--no-warnings")
-        if (clientName != null) {
-            ytRequest.addOption(
-                "--extractor-args",
-                "youtube:player_client=$clientName;youtube:webpage_skip" +
-                    if (clientName.contains("web") && poToken != null) ";youtube:po_token=$clientName.gvs+$poToken;" else "",
-            )
-        }
-        ytRequest.addOption("--dump-json")
-        val result = ytDlp?.execute(ytRequest)
-        return result?.out
     }
 
     actual fun smartTubePlayer(videoId: String): List<Pair<Int, String>> {
@@ -155,7 +119,7 @@ actual class Extractor {
 
     actual fun saveAudioWithThumbnail(
         filePath: String,
-        track: SongItem
+        track: SongItem,
     ): DownloadProgress {
         val command =
             listOf(
