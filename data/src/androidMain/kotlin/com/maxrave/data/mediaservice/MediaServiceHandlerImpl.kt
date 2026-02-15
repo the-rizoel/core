@@ -231,6 +231,43 @@ internal class MediaServiceHandlerImpl(
     //
     init {
         player.addListener(this)
+        // Wire up crossfade callbacks if the player supports crossfade
+        (player as? com.maxrave.media3.exoplayer.CrossfadeExoPlayerAdapter)?.let { crossfadePlayer ->
+            crossfadePlayer.onCrossfadeStateChanged = { isCrossfading ->
+                _controlState.update { it.copy(isCrossfading = isCrossfading) }
+                if (isCrossfading) {
+                    // Create LoudnessEnhancer for the secondary player if volume normalization is enabled
+                    if (normalizeVolume) {
+                        crossfadePlayer.secondaryAudioSessionId?.let { sessionId ->
+                            if (sessionId != PlayerConstants.AUDIO_SESSION_ID_UNSET) {
+                                try {
+                                    secondLoudnessEnhancer?.release()
+                                    secondLoudnessEnhancer = LoudnessEnhancer(sessionId)
+                                    // Apply current loudness settings to the secondary enhancer
+                                    loudnessEnhancer?.targetGain?.let { gain ->
+                                        secondLoudnessEnhancer?.setTargetGain(gain.toInt())
+                                        secondLoudnessEnhancer?.enabled = true
+                                    }
+                                } catch (e: Exception) {
+                                    Logger.e(TAG, "Failed to create secondary LoudnessEnhancer: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Crossfade ended — release secondary enhancer
+                    try {
+                        secondLoudnessEnhancer?.enabled = false
+                        secondLoudnessEnhancer?.release()
+                    } catch (_: Exception) {}
+                    secondLoudnessEnhancer = null
+                }
+            }
+            // NOTE: onMediaItemTransition is now fired directly by CrossfadeExoPlayerAdapter
+            // on the listener list (matching the JVM GstreamerPlayerAdapter pattern), so no
+            // custom callback wiring is needed here. The handler's onMediaItemTransition
+            // override (MediaPlayerListener) is called automatically.
+        }
         progressJob = Job()
         bufferedJob = Job()
         sleepTimerJob = Job()
@@ -962,6 +999,7 @@ internal class MediaServiceHandlerImpl(
     }
 
     override fun resetCrossfade() {
+        (player as? com.maxrave.media3.exoplayer.CrossfadeExoPlayerAdapter)?.cancelCrossfade()
         _controlState.update {
             it.copy(
                 isCrossfading = false,
