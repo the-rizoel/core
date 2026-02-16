@@ -1,5 +1,9 @@
 package com.maxrave.media3.exoplayer
 
+import android.view.Surface
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import android.view.TextureView
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -80,6 +84,112 @@ internal class DelegatingForwardingPlayer(
     override fun removeListener(listener: Player.Listener) {
         trackedListeners.remove(listener)
         super.removeListener(listener)
+    }
+
+    // ========== Video Surface Tracking ==========
+    // Track the current video output so it can be re-attached when the delegate is swapped.
+    // Without this, video stops rendering after a delegate swap because the new ExoPlayer
+    // instance never receives setVideoSurfaceView/setVideoSurface/etc.
+
+    private sealed class VideoOutput {
+        data class SurfaceViewOutput(val surfaceView: SurfaceView) : VideoOutput()
+
+        data class TextureViewOutput(val textureView: TextureView) : VideoOutput()
+
+        data class SurfaceOutput(val surface: Surface) : VideoOutput()
+
+        data class SurfaceHolderOutput(val surfaceHolder: SurfaceHolder) : VideoOutput()
+    }
+
+    private var currentVideoOutput: VideoOutput? = null
+
+    override fun setVideoSurfaceView(surfaceView: SurfaceView?) {
+        currentVideoOutput = surfaceView?.let { VideoOutput.SurfaceViewOutput(it) }
+        super.setVideoSurfaceView(surfaceView)
+    }
+
+    override fun setVideoTextureView(textureView: TextureView?) {
+        currentVideoOutput = textureView?.let { VideoOutput.TextureViewOutput(it) }
+        super.setVideoTextureView(textureView)
+    }
+
+    override fun setVideoSurface(surface: Surface?) {
+        currentVideoOutput = surface?.let { VideoOutput.SurfaceOutput(it) }
+        super.setVideoSurface(surface)
+    }
+
+    override fun setVideoSurfaceHolder(surfaceHolder: SurfaceHolder?) {
+        currentVideoOutput = surfaceHolder?.let { VideoOutput.SurfaceHolderOutput(it) }
+        super.setVideoSurfaceHolder(surfaceHolder)
+    }
+
+    override fun clearVideoSurface() {
+        currentVideoOutput = null
+        super.clearVideoSurface()
+    }
+
+    override fun clearVideoSurface(surface: Surface?) {
+        if (currentVideoOutput is VideoOutput.SurfaceOutput &&
+            (currentVideoOutput as VideoOutput.SurfaceOutput).surface === surface
+        ) {
+            currentVideoOutput = null
+        }
+        super.clearVideoSurface(surface)
+    }
+
+    override fun clearVideoSurfaceView(surfaceView: SurfaceView?) {
+        if (currentVideoOutput is VideoOutput.SurfaceViewOutput &&
+            (currentVideoOutput as VideoOutput.SurfaceViewOutput).surfaceView === surfaceView
+        ) {
+            currentVideoOutput = null
+        }
+        super.clearVideoSurfaceView(surfaceView)
+    }
+
+    override fun clearVideoTextureView(textureView: TextureView?) {
+        if (currentVideoOutput is VideoOutput.TextureViewOutput &&
+            (currentVideoOutput as VideoOutput.TextureViewOutput).textureView === textureView
+        ) {
+            currentVideoOutput = null
+        }
+        super.clearVideoTextureView(textureView)
+    }
+
+    override fun clearVideoSurfaceHolder(surfaceHolder: SurfaceHolder?) {
+        if (currentVideoOutput is VideoOutput.SurfaceHolderOutput &&
+            (currentVideoOutput as VideoOutput.SurfaceHolderOutput).surfaceHolder === surfaceHolder
+        ) {
+            currentVideoOutput = null
+        }
+        super.clearVideoSurfaceHolder(surfaceHolder)
+    }
+
+    /**
+     * Re-attach the tracked video output to the current delegate.
+     * Called after [swapDelegate] to ensure video continues rendering on the new ExoPlayer.
+     */
+    private fun reAttachVideoOutput() {
+        when (val output = currentVideoOutput) {
+            is VideoOutput.SurfaceViewOutput -> {
+                Logger.d(TAG, "Re-attaching SurfaceView to new delegate")
+                wrappedPlayer.setVideoSurfaceView(output.surfaceView)
+            }
+            is VideoOutput.TextureViewOutput -> {
+                Logger.d(TAG, "Re-attaching TextureView to new delegate")
+                wrappedPlayer.setVideoTextureView(output.textureView)
+            }
+            is VideoOutput.SurfaceOutput -> {
+                Logger.d(TAG, "Re-attaching Surface to new delegate")
+                wrappedPlayer.setVideoSurface(output.surface)
+            }
+            is VideoOutput.SurfaceHolderOutput -> {
+                Logger.d(TAG, "Re-attaching SurfaceHolder to new delegate")
+                wrappedPlayer.setVideoSurfaceHolder(output.surfaceHolder)
+            }
+            null -> {
+                // No video output to re-attach
+            }
+        }
     }
 
     // ========== Playlist Navigation Overrides ==========
@@ -200,7 +310,12 @@ internal class DelegatingForwardingPlayer(
             super.addListener(listener)
         }
 
-        // 5. Verify
+        // 5. Re-attach video surface to the new delegate
+        //    Without this, video stops rendering because the new ExoPlayer
+        //    never received setVideoSurfaceView/setVideoSurface/etc.
+        reAttachVideoOutput()
+
+        // 6. Verify
         if (wrappedPlayer !== newDelegate) {
             Logger.e(TAG, "Delegate swap verification FAILED - wrappedPlayer is not the new delegate!")
         } else {

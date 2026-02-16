@@ -27,13 +27,12 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultLoadControl.DEFAULT_MAX_BUFFER_MS
 import androidx.media3.exoplayer.DefaultLoadControl.DEFAULT_MIN_BUFFER_MS
 import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.LoadControl
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.exoplayer.util.EventLogger
+import androidx.media3.common.Player
 import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.mkv.MatroskaExtractor
 import androidx.media3.extractor.mp4.FragmentedMp4Extractor
@@ -163,25 +162,12 @@ private val mediaServiceModule =
             provideRendererFactory(androidContext())
         }
 
-        // ExoPlayer
-        single<ExoPlayer>(createdAtStart = true, qualifier = named(MAIN_PLAYER)) {
-            ExoPlayer
-                .Builder(androidContext())
-                .setAudioAttributes(get(), true)
-                .setLoadControl(
-                    provideLoadControl(),
-                ).setWakeMode(C.WAKE_MODE_NETWORK)
-                .setHandleAudioBecomingNoisy(true)
-                .setSeekForwardIncrementMs(5000)
-                .setSeekBackIncrementMs(5000)
-                .setMediaSourceFactory(
-                    get<MergingMediaSourceFactory>(),
-                ).setRenderersFactory(
-                    get<DefaultRenderersFactory>(),
-                ).build()
-                .also {
-                    it.addAnalyticsListener(EventLogger())
-                }
+        // Player exposed for UI (video rendering via PlayerView/PlayerSurface).
+        // Points to CrossfadeExoPlayerAdapter's ForwardingPlayer, which delegates to
+        // the currently active ExoPlayer instance. This ensures the video surface is
+        // always connected to the player that's actually playing media.
+        single<Player>(qualifier = named(MAIN_PLAYER)) {
+            (get<MediaPlayerInterface>() as CrossfadeExoPlayerAdapter).forwardingPlayer
         }
 
         // CoilBitmapLoader

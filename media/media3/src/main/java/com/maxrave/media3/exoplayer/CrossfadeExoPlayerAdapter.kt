@@ -1070,18 +1070,19 @@ internal class CrossfadeExoPlayerAdapter(
                         }
 
                         Player.STATE_READY -> {
-                            if (internalState == InternalState.PREPARING) {
-                                if (cachedIsLoading) {
-                                    cachedIsLoading = false
-                                    listeners.forEach { it.onIsLoadingChanged(false) }
-                                }
-                                // Duration should be available now
-                                val dur = player.duration
-                                if (dur > 0) cachedDuration = dur
+                            // Always clear loading state when ExoPlayer is ready
+                            // (handles both initial load AND mid-playback rebuffer)
+                            if (cachedIsLoading) {
+                                cachedIsLoading = false
+                                listeners.forEach { it.onIsLoadingChanged(false) }
                             }
+                            // Duration should be available now
+                            val dur = player.duration
+                            if (dur > 0) cachedDuration = dur
                         }
 
                         Player.STATE_BUFFERING -> {
+                            // Playback is stalled waiting for data — report buffering
                             if (!cachedIsLoading) {
                                 cachedIsLoading = true
                                 listeners.forEach { it.onIsLoadingChanged(true) }
@@ -1123,8 +1124,15 @@ internal class CrossfadeExoPlayerAdapter(
                 }
 
                 override fun onIsLoadingChanged(isLoading: Boolean) {
-                    cachedIsLoading = isLoading
-                    listeners.forEach { it.onIsLoadingChanged(isLoading) }
+                    // ExoPlayer reports isLoading=true during normal background buffer refill,
+                    // not just when playback is stalled. Only propagate loading=true when
+                    // playback is actually stalled (STATE_BUFFERING), otherwise the UI
+                    // would show a buffering indicator continuously during normal playback.
+                    val isPlaybackStalled = isLoading && player.playbackState == Player.STATE_BUFFERING
+                    if (cachedIsLoading != isPlaybackStalled) {
+                        cachedIsLoading = isPlaybackStalled
+                        listeners.forEach { it.onIsLoadingChanged(isPlaybackStalled) }
+                    }
                 }
 
                 override fun onTracksChanged(tracks: Tracks) {
@@ -1301,8 +1309,30 @@ internal class CrossfadeExoPlayerAdapter(
 
                 Logger.d(TAG, "Now playing updated to track $nextIndex during crossfade")
 
-                // Perform crossfade animation
-                performCrossfade(nextIndex, nextPlayer)
+                // Calculate effective crossfade duration based on ACTUAL remaining time.
+                // If the secondary player wasn't precached, URL resolution + buffering may
+                // have consumed part of the crossfade window. Use the lesser of configured
+                // duration and actual remaining time so the animation ends when the old track does.
+                val actualTimeRemaining =
+                    currentPlayer?.let { player ->
+                        val dur = player.duration
+                        val pos = player.currentPosition
+                        if (dur > 0 && pos >= 0) dur - pos else crossfadeDurationMs.toLong()
+                    } ?: crossfadeDurationMs.toLong()
+
+                val effectiveCrossfadeDurationMs =
+                    minOf(crossfadeDurationMs.toLong(), actualTimeRemaining)
+                        .coerceAtLeast(1000L)
+                        .toInt()
+
+                Logger.d(
+                    TAG,
+                    "Crossfade duration: configured=${crossfadeDurationMs}ms, " +
+                        "actualRemaining=${actualTimeRemaining}ms, effective=${effectiveCrossfadeDurationMs}ms",
+                )
+
+                // Perform crossfade animation with effective duration
+                performCrossfade(nextIndex, nextPlayer, effectiveCrossfadeDurationMs)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Logger.e(TAG, "Crossfade error: ${e.message}", e)
@@ -1316,14 +1346,20 @@ internal class CrossfadeExoPlayerAdapter(
     /**
      * Perform the actual crossfade animation.
      * Mirrors GstreamerPlayerAdapter.performCrossfade()
+     *
+     * @param effectiveDurationMs The actual crossfade duration to use. May be shorter than
+     *   the configured [crossfadeDurationMs] if URL resolution / buffering consumed
+     *   part of the crossfade window.
      */
     private suspend fun performCrossfade(
         nextIndex: Int,
         nextPlayer: ExoPlayer,
+        effectiveDurationMs: Int,
     ) {
         val steps = 50 // 50 steps for smooth transition
-        val delayPerStep = crossfadeDurationMs / steps
+        val delayPerStep = (effectiveDurationMs / steps).coerceAtLeast(20) // min 20ms per step
         val targetVolume = internalVolume
+        Logger.d(TAG, "Crossfade animation: ${effectiveDurationMs}ms, ${steps} steps, ${delayPerStep}ms/step")
 
         crossfadeJob?.cancel()
         crossfadeJob =
@@ -1434,7 +1470,10 @@ internal class CrossfadeExoPlayerAdapter(
                                 if (dur > 0) cachedDuration = dur
                                 if (buf >= 0) cachedBufferedPosition = buf
 
-                                // Check if should trigger crossfade
+                                // Check if should trigger crossfade.
+                                // Add a preparation buffer (3s) so that if the next track
+                                // is NOT precached, URL resolution + buffering time doesn't
+                                // eat into the audible crossfade window.
                                 if (crossfadeEnabled &&
                                     !isCrossfading &&
                                     dur > 0 &&
@@ -1442,7 +1481,13 @@ internal class CrossfadeExoPlayerAdapter(
                                     currentMediaItem?.isVideo() != true
                                 ) {
                                     val timeRemaining = dur - pos
-                                    if (timeRemaining in 1..crossfadeDurationMs.toLong()) {
+                                    val nextVideoId = playlist.getOrNull(getNextMediaItemIndex())?.mediaId
+                                    val isPrecached = nextVideoId != null && precachedPlayers.containsKey(nextVideoId)
+                                    // If next track is precached, trigger at exactly crossfadeDurationMs.
+                                    // If NOT precached, trigger 3s earlier to allow preparation time.
+                                    val preparationBufferMs = if (isPrecached) 0L else 3000L
+                                    val triggerThreshold = crossfadeDurationMs.toLong() + preparationBufferMs
+                                    if (timeRemaining in 1..triggerThreshold) {
                                         if (hasNextMediaItem()) {
                                             val nextIndex = getNextMediaItemIndex()
                                             triggerCrossfadeTransition(nextIndex)
