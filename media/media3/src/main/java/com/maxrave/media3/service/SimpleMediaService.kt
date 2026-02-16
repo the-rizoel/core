@@ -15,8 +15,8 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import androidx.core.content.getSystemService
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaController
 import androidx.media3.session.MediaLibraryService
@@ -25,11 +25,12 @@ import androidx.media3.session.SessionToken
 import androidx.media3.ui.DefaultMediaDescriptionAdapter
 import androidx.media3.ui.PlayerNotificationManager
 import com.google.common.util.concurrent.MoreExecutors
-import com.maxrave.common.Config
 import com.maxrave.common.MEDIA_NOTIFICATION
 import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.mediaservice.handler.MediaPlayerHandler
+import com.maxrave.domain.mediaservice.player.MediaPlayerInterface
 import com.maxrave.logger.Logger
+import com.maxrave.media3.exoplayer.CrossfadeExoPlayerAdapter
 import com.maxrave.media3.R
 import com.maxrave.media3.extension.toCommandButton
 import com.maxrave.media3.utils.CoilBitmapLoader
@@ -49,8 +50,11 @@ import kotlin.time.Duration.Companion.seconds
 internal class SimpleMediaService :
     MediaLibraryService(),
     KoinComponent {
-    private val coroutineScope by inject<CoroutineScope>(named(Config.SERVICE_SCOPE))
-    private val player: ExoPlayer by inject<ExoPlayer>(named(Config.MAIN_PLAYER))
+    private val coroutineScope by inject<CoroutineScope>(named(com.maxrave.common.Config.SERVICE_SCOPE))
+    private val mediaPlayerAdapter: MediaPlayerInterface by inject<MediaPlayerInterface>()
+    private val player: Player by lazy {
+        (mediaPlayerAdapter as CrossfadeExoPlayerAdapter).forwardingPlayer
+    }
     private val coilBitmapLoader: CoilBitmapLoader by inject<CoilBitmapLoader>()
 
     private var mediaSession: MediaLibrarySession? = null
@@ -204,14 +208,14 @@ internal class SimpleMediaService :
         Logger.w("Service", "Starting release process")
         runBlocking {
             try {
-                // Release MediaSession and Player
+                // Release MediaSession (don't release player - CrossfadeExoPlayerAdapter manages it)
                 mediaSession?.run {
                     this.player.pause()
                     this.player.playWhenReady = false
-                    this.player.release()
+                    // Don't call this.player.release() - CrossfadeExoPlayerAdapter manages player lifecycle
                     this.release()
                 }
-                // Release handler first (contains coroutines and jobs)
+                // Release handler (contains coroutines and jobs, which also releases the adapter)
                 simpleMediaServiceHandler.release()
                 mediaSession = null
                 Logger.w("Service", "Simple Media Service Released")
@@ -249,7 +253,7 @@ internal class SimpleMediaService :
     @UnstableApi
     private fun provideMediaLibrarySession(
         service: MediaLibraryService,
-        player: ExoPlayer,
+        player: Player,
         callback: MediaLibrarySession.Callback,
     ): MediaLibrarySession =
         MediaLibrarySession

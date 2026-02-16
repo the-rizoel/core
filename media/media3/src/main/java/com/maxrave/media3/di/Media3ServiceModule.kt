@@ -59,7 +59,7 @@ import com.maxrave.domain.repository.SearchRepository
 import com.maxrave.domain.repository.SongRepository
 import com.maxrave.domain.repository.StreamRepository
 import com.maxrave.logger.Logger
-import com.maxrave.media3.exoplayer.ExoPlayerAdapter
+import com.maxrave.media3.exoplayer.CrossfadeExoPlayerAdapter
 import com.maxrave.media3.repository.CacheRepositoryImpl
 import com.maxrave.media3.service.SimpleMediaService
 import com.maxrave.media3.service.callback.SimpleMediaSessionCallback
@@ -190,7 +190,14 @@ private val mediaServiceModule =
         }
 
         single<MediaPlayerInterface>(createdAtStart = true) {
-            ExoPlayerAdapter(get(named(MAIN_PLAYER)))
+            CrossfadeExoPlayerAdapter(
+                context = androidContext(),
+                coroutineScope = get(named(SERVICE_SCOPE)),
+                dataStoreManager = get(),
+                mediaSourceFactory = get(),
+                renderersFactory = get(),
+                audioAttributes = get(),
+            )
         }
 
         // MediaSession Callback for main player

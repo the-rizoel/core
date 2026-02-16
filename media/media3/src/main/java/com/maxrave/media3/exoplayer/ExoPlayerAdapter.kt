@@ -239,7 +239,7 @@ class ExoPlayerAdapter(
         exoPlayer.release()
     }
 
-    private fun getShuffledMediaItemList(): List<GenericMediaItem> {
+    internal fun getShuffledMediaItemList(): List<GenericMediaItem> {
         val list = mutableListOf<GenericMediaItem>()
         val s = exoPlayer.shuffleModeEnabled
         val timeline = exoPlayer.currentTimeline
@@ -254,7 +254,7 @@ class ExoPlayerAdapter(
     /**
      * Notify timeline changed with current order (shuffled or not)
      */
-    private fun notifyTimelineChanged(reason: String) {
+    internal fun notifyTimelineChanged(reason: String) {
         val list = getShuffledMediaItemList()
         listeners.forEach { it.onTimelineChanged(list, reason) }
     }
@@ -402,7 +402,7 @@ class ExoPlayerAdapter(
      * Create shuffle order for current playlist
      * Keeps the current track at its position and shuffles the rest
      */
-    private fun createShuffleOrder() {
+    internal fun createShuffleOrder() {
         if (mediaItemCount == 0) {
             shuffleIndices.clear()
             shuffleOrder.clear()
@@ -445,7 +445,7 @@ class ExoPlayerAdapter(
     /**
      * Clear shuffle order
      */
-    private fun clearShuffleOrder() {
+    internal fun clearShuffleOrder() {
         shuffleIndices.clear()
         shuffleOrder.clear()
         exoPlayer.shuffleOrder.cloneAndClear()
@@ -534,7 +534,7 @@ class ExoPlayerAdapter(
 // Extension functions for conversions between Media3 and Generic types
 
 @UnstableApi
-private fun GenericMediaItem.toMedia3MediaItem(): MediaItem {
+fun GenericMediaItem.toMedia3MediaItem(): MediaItem {
     val builder =
         MediaItem
             .Builder()
@@ -548,7 +548,7 @@ private fun GenericMediaItem.toMedia3MediaItem(): MediaItem {
 }
 
 @UnstableApi
-private fun MediaItem.toGenericMediaItem(): GenericMediaItem =
+fun MediaItem.toGenericMediaItem(): GenericMediaItem =
     GenericMediaItem(
         mediaId = mediaId,
         uri = localConfiguration?.uri.toString(),
@@ -556,7 +556,7 @@ private fun MediaItem.toGenericMediaItem(): GenericMediaItem =
         customCacheKey = localConfiguration?.customCacheKey,
     )
 
-private fun GenericMediaMetadata.toMedia3MediaMetadata(): MediaMetadata =
+fun GenericMediaMetadata.toMedia3MediaMetadata(): MediaMetadata =
     MediaMetadata
         .Builder()
         .apply {
@@ -567,7 +567,7 @@ private fun GenericMediaMetadata.toMedia3MediaMetadata(): MediaMetadata =
             description?.let { setDescription(it) }
         }.build()
 
-private fun MediaMetadata.toGenericMediaMetadata(): GenericMediaMetadata =
+fun MediaMetadata.toGenericMediaMetadata(): GenericMediaMetadata =
     GenericMediaMetadata(
         title = title?.toString(),
         artist = artist?.toString(),
@@ -576,11 +576,11 @@ private fun MediaMetadata.toGenericMediaMetadata(): GenericMediaMetadata =
         description = description?.toString(),
     )
 
-private fun GenericPlaybackParameters.toMedia3PlaybackParameters(): PlaybackParameters = PlaybackParameters(speed, pitch)
+internal fun GenericPlaybackParameters.toMedia3PlaybackParameters(): PlaybackParameters = PlaybackParameters(speed, pitch)
 
-private fun PlaybackParameters.toGenericPlaybackParameters(): GenericPlaybackParameters = GenericPlaybackParameters(speed, pitch)
+internal fun PlaybackParameters.toGenericPlaybackParameters(): GenericPlaybackParameters = GenericPlaybackParameters(speed, pitch)
 
-private fun Tracks.toGenericTracks(): GenericTracks {
+fun Tracks.toGenericTracks(): GenericTracks {
     val genericGroups =
         groups.map { group ->
             GenericTracks.GenericTrackGroup(trackCount = group.length)
