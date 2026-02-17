@@ -2372,6 +2372,12 @@ class JvmMediaPlayerHandlerImpl(
         updateNextPreviousTrackAvailability()
     }
 
+    override fun onCrossfadeStateChanged(isCrossfading: Boolean) {
+        _controlState.update {
+            it.copy(isCrossfading = isCrossfading)
+        }
+    }
+
     override fun onTimelineChanged(
         list: List<GenericMediaItem>,
         reason: String,

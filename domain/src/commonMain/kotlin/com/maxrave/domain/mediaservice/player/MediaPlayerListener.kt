@@ -33,5 +33,7 @@ interface MediaPlayerListener {
 
     fun onIsLoadingChanged(isLoading: Boolean) {}
 
+    fun onCrossfadeStateChanged(isCrossfading: Boolean) {}
+
     fun onVolumeChanged(volume: Float) {}
 }

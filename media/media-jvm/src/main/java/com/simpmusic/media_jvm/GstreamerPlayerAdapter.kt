@@ -206,6 +206,16 @@ class GstreamerPlayerAdapter(
     @Volatile
     private var isCrossfading = false
 
+    /**
+     * Update crossfade state and notify listeners when it changes.
+     */
+    private fun setCrossfading(value: Boolean) {
+        if (isCrossfading != value) {
+            isCrossfading = value
+            listeners.forEach { it.onCrossfadeStateChanged(value) }
+        }
+    }
+
     // Playlist management
     private val playlist = mutableListOf<GenericMediaItem>()
     private var localCurrentMediaItemIndex = -1
@@ -271,7 +281,7 @@ class GstreamerPlayerAdapter(
                 crossfadeJob = null
                 secondaryPlayer?.release()
                 secondaryPlayer = null
-                isCrossfading = false
+                setCrossfading(false)
             }
 
             currentPlayer?.pause()
@@ -343,7 +353,7 @@ class GstreamerPlayerAdapter(
                 crossfadeJob = null
                 secondaryPlayer?.release()
                 secondaryPlayer = null
-                isCrossfading = false
+                setCrossfading(false)
             }
 
             // Cancel any ongoing load
@@ -378,7 +388,7 @@ class GstreamerPlayerAdapter(
                     crossfadeJob = null
                     secondaryPlayer?.release()
                     secondaryPlayer = null
-                    isCrossfading = false
+                    setCrossfading(false)
                 }
             }
 
@@ -397,7 +407,7 @@ class GstreamerPlayerAdapter(
                     crossfadeJob = null
                     secondaryPlayer?.release()
                     secondaryPlayer = null
-                    isCrossfading = false
+                    setCrossfading(false)
                 }
             }
 
@@ -1297,7 +1307,7 @@ class GstreamerPlayerAdapter(
         // Cancel any ongoing crossfade
         crossfadeJob?.cancel()
         crossfadeJob = null
-        isCrossfading = false
+        setCrossfading(false)
 
         currentPlayer?.let { cleanupPlayerInternal(it) }
         currentPlayer = null
@@ -1351,7 +1361,7 @@ class GstreamerPlayerAdapter(
 
         coroutineScope.launch {
             try {
-                isCrossfading = true
+                setCrossfading(true)
                 val nextMediaItem = playlist[nextIndex]
                 val nextVideoId = nextMediaItem.mediaId
 
@@ -1367,7 +1377,7 @@ class GstreamerPlayerAdapter(
                         val uri = extractPlayableUrl(nextMediaItem)
                         if (uri == null || uri.second.isEmpty()) {
                             Logger.e(TAG, "Failed to extract URL for crossfade")
-                            isCrossfading = false
+                            setCrossfading(false)
                             seekTo(nextIndex, 0) // Fallback to normal transition
                             return@launch
                         }
@@ -1397,7 +1407,7 @@ class GstreamerPlayerAdapter(
                 performCrossfade(nextIndex, nextPlayer)
             } catch (e: Exception) {
                 Logger.e(TAG, "Crossfade error: ${e.message}", e)
-                isCrossfading = false
+                setCrossfading(false)
                 // Fallback to normal transition
                 seekTo(nextIndex, 0)
             }
@@ -1442,7 +1452,7 @@ class GstreamerPlayerAdapter(
                     // Cleanup
                     nextPlayer.release()
                     secondaryPlayer = null
-                    isCrossfading = false
+                    setCrossfading(false)
                 }
             }
     }
@@ -1479,7 +1489,7 @@ class GstreamerPlayerAdapter(
         currentPlayer?.setVolume(internalVolume.toDouble())
 
         // Reset state
-        isCrossfading = false
+        setCrossfading(false)
         transitionToState(InternalState.PLAYING)
 
         // ℹ️ No need to notify listeners here - already done in triggerCrossfadeTransition()

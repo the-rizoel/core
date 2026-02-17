@@ -181,7 +181,6 @@ private val mediaServiceModule =
                 coroutineScope = get(named(SERVICE_SCOPE)),
                 dataStoreManager = get(),
                 mediaSourceFactory = get(),
-                renderersFactory = get(),
                 audioAttributes = get(),
             )
         }

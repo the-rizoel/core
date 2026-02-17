@@ -1,5 +1,6 @@
 package org.simpmusic.lyrics.parser
 
+import com.maxrave.domain.extension.decodeHtmlEntities
 import org.simpmusic.lyrics.domain.Lyrics
 
 fun parseSyncedLyrics(data: String): Lyrics {
@@ -19,7 +20,7 @@ fun parseSyncedLyrics(data: String): Lyrics {
                     endTimeMs = "0",
                     startTimeMs = timeInMillis.toString(),
                     syllables = listOf(),
-                    words = content,
+                    words = decodeHtmlEntities(content),
                 ),
             )
         }

@@ -278,6 +278,10 @@ interface DataStoreManager {
 
     suspend fun setCrossfadeDuration(duration: Int)
 
+    val crossfadeDjMode: Flow<String>
+
+    suspend fun setCrossfadeDjMode(enabled: Boolean)
+
     val youtubeSubtitleLanguage: Flow<String>
 
     suspend fun setYoutubeSubtitleLanguage(language: String)
