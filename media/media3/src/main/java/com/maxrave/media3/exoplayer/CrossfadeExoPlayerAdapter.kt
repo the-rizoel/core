@@ -385,19 +385,40 @@ internal class CrossfadeExoPlayerAdapter(
     }
 
     override fun seekToPrevious() {
-        if (hasPreviousMediaItem()) {
-            // Cancel any ongoing crossfade
-            if (isCrossfading) {
-                Logger.d(TAG, "seekToPrevious: Cancelling crossfade")
-                coroutineScope.launch {
-                    crossfadeJob?.cancel()
-                    crossfadeJob = null
-                    secondaryPlayer?.release()
-                    secondaryPlayer = null
-                    isCrossfading = false
-                }
+        // Cancel any ongoing crossfade first
+        if (isCrossfading) {
+            Logger.d(TAG, "seekToPrevious: Cancelling crossfade")
+            coroutineScope.launch {
+                crossfadeJob?.cancel()
+                crossfadeJob = null
+                secondaryPlayer?.release()
+                secondaryPlayer = null
+                isCrossfading = false
             }
+        }
 
+        if (crossfadeEnabled) {
+            // Standard music player behavior:
+            // - Position > 3s  → seek to start of current track (instant, no player teardown)
+            // - Position <= 3s → go to previous track (requires loading a new player)
+            val positionThresholdMs = 3000L
+            if (cachedPosition > positionThresholdMs) {
+                Logger.d(TAG, "seekToPrevious: Crossfade enabled, pos=${cachedPosition}ms > ${positionThresholdMs}ms — seeking to start")
+                currentPlayer?.seekTo(0)
+                cachedPosition = 0
+            } else if (hasPreviousMediaItem()) {
+                Logger.d(TAG, "seekToPrevious: Crossfade enabled, pos=${cachedPosition}ms <= ${positionThresholdMs}ms — going to previous track")
+                val prevIndex = getPreviousMediaItemIndex()
+                seekTo(prevIndex, 0)
+            } else {
+                Logger.d(TAG, "seekToPrevious: No previous item, seeking to start")
+                currentPlayer?.seekTo(0)
+                cachedPosition = 0
+            }
+            return
+        }
+
+        if (hasPreviousMediaItem()) {
             val prevIndex = getPreviousMediaItemIndex()
             seekTo(prevIndex, 0)
         }
@@ -1008,8 +1029,9 @@ internal class CrossfadeExoPlayerAdapter(
                         }
                     }
 
-                    // Enable audio focus on the current player
+                    // Enable audio focus and headphone-disconnect handling on the current player
                     player.setAudioAttributes(audioAttributes, true)
+                    player.setHandleAudioBecomingNoisy(true)
 
                     // Apply settings
                     player.volume = internalVolume
@@ -1422,8 +1444,9 @@ internal class CrossfadeExoPlayerAdapter(
         secondaryPlayer = null
         // localCurrentMediaItemIndex already updated in triggerCrossfadeTransition()
 
-        // Enable audio focus on new current player
+        // Enable audio focus and headphone-disconnect handling on new current player
         nextPlayer.setAudioAttributes(audioAttributes, true)
+        nextPlayer.setHandleAudioBecomingNoisy(true)
 
         // Ensure correct volume
         currentPlayer?.volume = internalVolume
