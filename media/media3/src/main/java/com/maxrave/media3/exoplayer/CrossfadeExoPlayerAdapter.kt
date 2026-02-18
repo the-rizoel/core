@@ -782,7 +782,7 @@ internal class CrossfadeExoPlayerAdapter(
         get() = cachedPosition
 
     override val duration: Long
-        get() = cachedDuration
+        get() = currentPlayer?.duration ?: cachedDuration
 
     override val bufferedPosition: Long
         get() = cachedBufferedPosition
