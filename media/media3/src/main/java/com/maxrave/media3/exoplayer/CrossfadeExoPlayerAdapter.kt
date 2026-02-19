@@ -21,7 +21,6 @@ import com.maxrave.domain.data.player.GenericMediaItem
 import com.maxrave.domain.data.player.GenericPlaybackParameters
 import com.maxrave.domain.data.player.PlayerConstants
 import com.maxrave.domain.data.player.PlayerError
-import com.maxrave.domain.extension.isVideo
 import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.mediaservice.player.MediaPlayerInterface
 import com.maxrave.domain.mediaservice.player.MediaPlayerListener
@@ -1713,8 +1712,7 @@ internal class CrossfadeExoPlayerAdapter(
                                 if (crossfadeEnabled &&
                                     !isCrossfading &&
                                     dur > 0 &&
-                                    pos > 0 &&
-                                    currentMediaItem?.isVideo() != true
+                                    pos > 0
                                 ) {
                                     val timeRemaining = dur - pos
                                     val nextVideoId = playlist.getOrNull(getNextMediaItemIndex())?.mediaId
