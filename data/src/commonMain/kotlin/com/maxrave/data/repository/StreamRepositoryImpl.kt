@@ -213,9 +213,10 @@ internal class StreamRepositoryImpl(
                             Logger.d("Stream", "Found potential 320kbps stream from Tidal: $res")
                             format =
                                 format?.copy(
-                                    itag = 320,
+                                    itag = 0,
                                     url = audioData.urls.firstOrNull() ?: format.url,
                                     mimeType = "${audioData.mimeType}; codecs=\"${audioData.codecs}\"",
+                                    bitrate = 320000,
                                 )
                         } else if (res
                                 ?.data
@@ -226,9 +227,9 @@ internal class StreamRepositoryImpl(
                             Logger.d("Stream", "Found potential 320kbps stream from Tidal manifest DASH: ${res.data?.manifest}")
                             format =
                                 format?.copy(
-                                    itag = 320,
+                                    itag = 0,
                                     url = res.data?.manifest?.decodeBase64(),
-                                    mimeType = audioData?.mimeType ?: format.mimeType,
+                                    bitrate = 320000,
                                 )
                         }
                     }

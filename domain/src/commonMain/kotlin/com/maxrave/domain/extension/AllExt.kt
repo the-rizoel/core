@@ -154,12 +154,16 @@ fun decodeHtmlEntities(text: String): String {
     // Named HTML entities
     val namedEntities =
         mapOf(
+            "&apos;" to "'",
+            "&quot;" to "\"",
             "&amp;" to "&",
             "&lt;" to "<",
             "&gt;" to ">",
-            "&quot;" to "\"",
-            "&apos;" to "'",
-            "&nbsp;" to "\u00A0",
+            "&#x27;" to "'",
+            "&#x22;" to "\"",
+            "&#x26;" to "&",
+            "&#x3C;" to "<",
+            "&#x3E;" to ">",
         )
 
     var result = text
