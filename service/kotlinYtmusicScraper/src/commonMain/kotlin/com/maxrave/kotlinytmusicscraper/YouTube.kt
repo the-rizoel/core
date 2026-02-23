@@ -2069,8 +2069,9 @@ class YouTube {
         durationSeconds: Int,
     ) = runCatching {
         val searchRes = ytMusic.searchTidalId(url, query).body<TidalSearchResponse>()
+        val firstRes = searchRes.data?.items?.firstOrNull { it?.duration?.let { dur -> abs(dur - durationSeconds) <= 1 } ?: false }
         val trackId =
-            (
+            firstRes?.id ?: (
                 searchRes.data
                     ?.items
                     ?.filter { it?.duration?.let { dur -> abs(dur - durationSeconds) <= 1 } ?: false }
