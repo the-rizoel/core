@@ -22,7 +22,6 @@ import com.maxrave.kotlinytmusicscraper.models.body.NextBody
 import com.maxrave.kotlinytmusicscraper.models.body.PlayerBody
 import com.maxrave.kotlinytmusicscraper.models.body.SearchBody
 import com.maxrave.kotlinytmusicscraper.models.response.DownloadProgress
-import com.maxrave.kotlinytmusicscraper.models.ytdlp.YtdlpVideoInfo
 import com.maxrave.kotlinytmusicscraper.utils.parseCookieString
 import com.maxrave.kotlinytmusicscraper.utils.sha1
 import com.maxrave.ktorext.encoding.brotli
@@ -30,6 +29,7 @@ import com.maxrave.ktorext.getEngine
 import com.maxrave.logger.Logger
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.ProxyConfig
+import io.ktor.client.plugins.HttpRedirect
 import io.ktor.client.plugins.compression.ContentEncoding
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
@@ -57,15 +57,12 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.serialization.kotlinx.protobuf.protobuf
 import io.ktor.serialization.kotlinx.xml.xml
 import io.ktor.utils.io.readRemaining
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
 import kotlinx.coroutines.channels.onFailure
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.io.readByteArray
@@ -139,6 +136,10 @@ class Ytmusic {
 //                        }
 //                    }
 //            }
+            install(HttpRedirect) {
+                checkHttpMethod = false
+                allowHttpsDowngrade = true
+            }
             install(Logging) {
                 logger = io.ktor.client.plugins.logging.Logger.DEFAULT
                 level = LogLevel.ALL
@@ -891,6 +892,8 @@ class Ytmusic {
         url: String,
         query: String,
     ) = httpClient.get("$url/search") {
+        contentType(ContentType.Application.Json)
+        header("accept", "*/*")
         parameter("s", query)
     }
 
@@ -898,6 +901,8 @@ class Ytmusic {
         url: String,
         tidalId: String,
     ) = httpClient.get("$url/track") {
+        contentType(ContentType.Application.Json)
+        header("accept", "*/*")
         parameter("id", tidalId)
         parameter("quality", "HIGH")
     }

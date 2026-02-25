@@ -206,8 +206,16 @@ internal class StreamRepositoryImpl(
                                 .replace(".", " ")
                                 .replace("  ", " ")
                         Logger.d("Stream", "Search query for 320kbps: $q")
-                        val res = youTube.getTidalStream(your320kbpsUrl, q, durationSecond).getOrNull()
-                        Logger.w("Stream", "Tidal response: $res")
+                        val res =
+                            youTube
+                                .getTidalStream(your320kbpsUrl, q, durationSecond)
+                                .apply {
+                                    onSuccess {
+                                        Logger.w("Stream", "Tidal response: $this")
+                                    }.onFailure {
+                                        Logger.e("Stream", "Tidal error: ${it.message}", it)
+                                    }
+                                }.getOrNull()
                         val audioData = res?.data?.manifest?.decodeTidalManifest()
                         if (audioData != null) {
                             Logger.d("Stream", "Found potential 320kbps stream from Tidal: $res")
