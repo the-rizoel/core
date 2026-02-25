@@ -13,5 +13,7 @@ data class ChartItem(
         INDIA,
         INDONESIA,
         BRAZIL,
+        MEXICO,
+        UNITED_STATE,
     }
 }

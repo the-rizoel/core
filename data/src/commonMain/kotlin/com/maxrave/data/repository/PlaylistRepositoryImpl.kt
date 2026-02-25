@@ -786,6 +786,8 @@ internal class PlaylistRepositoryImpl(
                                         "in" -> ChartItem.Country.INDIA
                                         "id" -> ChartItem.Country.INDONESIA
                                         "br" -> ChartItem.Country.BRAZIL
+                                        "us" -> ChartItem.Country.UNITED_STATE
+                                        "mx" -> ChartItem.Country.MEXICO
                                         else -> return@mapNotNull null
                                     },
                                 ytPlaylistId = it.youtubePlaylistId ?: return@mapNotNull null,
