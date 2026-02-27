@@ -1138,7 +1138,7 @@ internal class DataStoreManagerImpl(
 
     override val your320kbpsUrl: Flow<String> =
         settingsDataStore.data.map { preferences ->
-            preferences[YOUR_320KBPS_URL] ?: ""
+            preferences[YOUR_320KBPS_URL] ?: "https://api.monochrome.tf"
         }
 
     override suspend fun setYour320kbpsUrl(url: String) {
