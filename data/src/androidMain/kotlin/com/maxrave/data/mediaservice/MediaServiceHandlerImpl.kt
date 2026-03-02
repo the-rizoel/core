@@ -1959,7 +1959,8 @@ internal class MediaServiceHandlerImpl(
         if (player.audioSessionId != PlayerConstants.AUDIO_SESSION_ID_UNSET) {
             try {
                 loudnessEnhancer?.release()
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
             try {
                 loudnessEnhancer = LoudnessEnhancer(player.audioSessionId)
             } catch (e: Exception) {
@@ -2233,6 +2234,7 @@ internal class MediaServiceHandlerImpl(
         if (player.currentMediaItemIndex == 0) {
             resetCrossfade()
         }
+        mayBeSaveRecentSong()
     }
 
     private fun mayBeTrackingListeningLocal(

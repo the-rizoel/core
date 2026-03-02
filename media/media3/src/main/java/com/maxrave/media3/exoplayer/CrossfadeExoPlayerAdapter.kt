@@ -1464,6 +1464,10 @@ internal class CrossfadeExoPlayerAdapter(
                 secondaryPlayerFilter = nextFilter
                 // *** KEY: Move our custom listener from current to next player ***
                 setupPlayerListenerInternal(nextPlayer)
+                // Apply playback parameters immediately so the incoming track
+                // plays at the correct speed/pitch from the very start of crossfade
+                nextPlayer.playbackParameters = PlaybackParameters(internalPlaybackSpeed, internalPlaybackPitch)
+                nextPlayer.skipSilenceEnabled = internalSkipSilence
                 nextPlayer.volume = 0f
 
                 // === CRITICAL ORDER for MediaSession notification ===
@@ -1505,7 +1509,9 @@ internal class CrossfadeExoPlayerAdapter(
                     currentPlayer?.let { player ->
                         val dur = player.duration
                         val pos = player.currentPosition
-                        if (dur > 0 && pos >= 0) dur - pos else crossfadeDurationMs.toLong()
+                        // Divide by playback speed: at 2x speed, remaining wall-clock time is halved
+                        val speed = internalPlaybackSpeed.coerceAtLeast(0.1f)
+                        if (dur > 0 && pos >= 0) ((dur - pos) / speed).toLong() else crossfadeDurationMs.toLong()
                     } ?: crossfadeDurationMs.toLong()
 
                 val effectiveCrossfadeDurationMs =
@@ -1713,9 +1719,11 @@ internal class CrossfadeExoPlayerAdapter(
                                 internalState == InternalState.READY ||
                                 internalState == InternalState.PAUSED
                             ) {
-                                val pos = player.currentPosition
-                                val dur = player.duration
-                                val buf = player.bufferedPosition
+                                // During crossfade, show the incoming track's timeline
+                                val timelinePlayer = if (isCrossfading) secondaryPlayer ?: player else player
+                                val pos = timelinePlayer.currentPosition
+                                val dur = timelinePlayer.duration
+                                val buf = timelinePlayer.bufferedPosition
 
                                 if (pos >= 0) cachedPosition = pos
                                 if (dur > 0) cachedDuration = dur
@@ -1730,7 +1738,10 @@ internal class CrossfadeExoPlayerAdapter(
                                     dur > 0 &&
                                     pos > 0
                                 ) {
-                                    val timeRemaining = dur - pos
+                                    // Account for playback speed: at higher speed, media time
+                                    // is consumed faster, so wall-clock remaining is shorter
+                                    val speed = internalPlaybackSpeed.coerceAtLeast(0.1f)
+                                    val timeRemaining = ((dur - pos) / speed).toLong()
                                     val nextVideoId = playlist.getOrNull(getNextMediaItemIndex())?.mediaId
                                     val isPrecached = nextVideoId != null && precachedPlayers.containsKey(nextVideoId)
                                     // If next track is precached, trigger at exactly crossfadeDurationMs.

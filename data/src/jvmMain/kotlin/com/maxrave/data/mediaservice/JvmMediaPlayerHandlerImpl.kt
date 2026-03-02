@@ -2281,6 +2281,7 @@ class JvmMediaPlayerHandlerImpl(
         if (player.currentMediaItemIndex == 0) {
             resetCrossfade()
         }
+        mayBeSaveRecentSong()
     }
 
     private fun mayBeTrackingListeningLocal(
