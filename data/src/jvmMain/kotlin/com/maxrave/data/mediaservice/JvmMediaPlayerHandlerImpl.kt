@@ -390,7 +390,7 @@ class JvmMediaPlayerHandlerImpl(
                 launch {
                     combine(dataStoreManager.playbackSpeed, dataStoreManager.pitch) { speed, pitch ->
                         Pair(speed, pitch)
-                    }.collectLatest { pair ->
+                    }.distinctUntilChanged().collectLatest { pair ->
                         Logger.w(TAG, "Playback speed: ${pair.first}, Pitch: ${pair.second}")
                         player.playbackParameters =
                             GenericPlaybackParameters(
@@ -402,19 +402,21 @@ class JvmMediaPlayerHandlerImpl(
                 }
             val discordRPCEnabledJob =
                 launch {
-                    dataStoreManager.richPresenceEnabled.collectLatest {
-                        if (it == TRUE && discordRPC == null) {
-                            discordRPC = DiscordRPC(dataStoreManager.discordToken.first())
-                            nowPlayingState.value.songEntity?.let { song ->
-                                discordRPC?.updateSong(song)
+                    dataStoreManager.richPresenceEnabled
+                        .distinctUntilChanged()
+                        .collectLatest {
+                            if (it == TRUE && discordRPC == null) {
+                                discordRPC = DiscordRPC(dataStoreManager.discordToken.first())
+                                nowPlayingState.value.songEntity?.let { song ->
+                                    discordRPC?.updateSong(song)
+                                }
+                            } else if (it == FALSE) {
+                                if (discordRPC?.isRpcRunning() == true) {
+                                    discordRPC?.closeRPC()
+                                }
+                                discordRPC = null
                             }
-                        } else if (it == FALSE) {
-                            if (discordRPC?.isRpcRunning() == true) {
-                                discordRPC?.closeRPC()
-                            }
-                            discordRPC = null
                         }
-                    }
                 }
             controlStateJob.join()
             skipSegmentsJob.join()
