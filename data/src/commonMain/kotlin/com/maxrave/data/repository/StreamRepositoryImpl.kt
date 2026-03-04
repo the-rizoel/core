@@ -188,6 +188,10 @@ internal class StreamRepositoryImpl(
                     Logger.w("Stream", "expired at ${now().plusSeconds(response.streamingData?.expiresInSeconds?.toLong() ?: 0L)}")
                     val prefer320kbps = dataStoreManager.prefer320kbpsStream.first() == DataStoreManager.TRUE
                     val durationSecond = response.videoDetails?.lengthSeconds?.toIntOrNull()
+                    // AutoMix metadata from Tidal (hoisted for NewFormatEntity insertion below)
+                    var tidalBpm: Int? = null
+                    var tidalMusicKey: String? = null
+                    var tidalKeyScale: String? = null
                     if (prefer320kbps && !isVideo && durationSecond != null) {
                         val your320kbpsUrl = dataStoreManager.your320kbpsUrl.first()
                         Logger.d("Stream", "Prefer 320kbps enabled ${response.videoDetails}")
@@ -206,7 +210,7 @@ internal class StreamRepositoryImpl(
                                 .replace(".", " ")
                                 .replace("  ", " ")
                         Logger.d("Stream", "Search query for 320kbps: $q")
-                        val res =
+                        val tidalResult =
                             youTube
                                 .getTidalStream(your320kbpsUrl, q, durationSecond)
                                 .apply {
@@ -216,9 +220,13 @@ internal class StreamRepositoryImpl(
                                         Logger.e("Stream", "Tidal error: ${it.message}", it)
                                     }
                                 }.getOrNull()
-                        val audioData = res?.data?.manifest?.decodeTidalManifest()
+                        // Extract AutoMix metadata from Tidal match (bpm, key, keyScale)
+                        tidalBpm = tidalResult?.bpm
+                        tidalMusicKey = tidalResult?.musicKey
+                        tidalKeyScale = tidalResult?.keyScale
+                        val audioData = tidalResult?.stream?.data?.manifest?.decodeTidalManifest()
                         if (audioData != null) {
-                            Logger.d("Stream", "Found potential 320kbps stream from Tidal: $res")
+                            Logger.d("Stream", "Found potential 320kbps stream from Tidal: $tidalResult")
                             format =
                                 format?.copy(
                                     itag = 0,
@@ -226,17 +234,18 @@ internal class StreamRepositoryImpl(
                                     mimeType = "${audioData.mimeType}; codecs=\"${audioData.codecs}\"",
                                     bitrate = 320000,
                                 )
-                        } else if (res
+                        } else if (tidalResult
+                                ?.stream
                                 ?.data
                                 ?.manifest
                                 ?.decodeBase64()
                                 ?.contains("MPD") == true
                         ) {
-                            Logger.d("Stream", "Found potential 320kbps stream from Tidal manifest DASH: ${res.data?.manifest}")
+                            Logger.d("Stream", "Found potential 320kbps stream from Tidal manifest DASH: ${tidalResult.stream.data?.manifest}")
                             format =
                                 format?.copy(
                                     itag = 0,
-                                    url = res.data?.manifest?.decodeBase64(),
+                                    url = tidalResult.stream.data?.manifest?.decodeBase64(),
                                     bitrate = 320000,
                                 )
                         }
@@ -285,6 +294,9 @@ internal class StreamRepositoryImpl(
                             expiredTime = now().plusSeconds(response.streamingData?.expiresInSeconds?.toLong() ?: 0L),
                             audioUrl = if (muxed) response.streamingData?.hlsManifestUrl else format?.url,
                             videoUrl = if (muxed) response.streamingData?.hlsManifestUrl else videoFormat?.url,
+                            bpm = tidalBpm,
+                            musicKey = tidalMusicKey,
+                            keyScale = tidalKeyScale,
                         ),
                     )
                     if (data.first != null) {

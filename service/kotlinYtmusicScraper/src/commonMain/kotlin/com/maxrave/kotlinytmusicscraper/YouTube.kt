@@ -2064,6 +2064,16 @@ class YouTube {
             ytMusic.getSimpMusicChart().body<SimpMusicChartResponse>()
         }
 
+    /**
+     * Result of a Tidal stream search, including stream data and audio analysis metadata.
+     */
+    data class TidalStreamResult(
+        val stream: TidalStreamResponse,
+        val bpm: Int?,
+        val musicKey: String?,
+        val keyScale: String?,
+    )
+
     suspend fun getTidalStream(
         url: String,
         query: String,
@@ -2071,15 +2081,18 @@ class YouTube {
     ) = runCatching {
         val searchRes = ytMusic.searchTidalId(url, query).body<TidalSearchResponse>()
         val firstRes = searchRes.data?.items?.firstOrNull { it?.duration?.let { dur -> abs(dur - durationSeconds) <= 1 } ?: false }
-        val trackId =
-            firstRes?.id ?: (
-                searchRes.data
-                    ?.items
-                    ?.filter { it?.duration?.let { dur -> abs(dur - durationSeconds) <= 1 } ?: false }
-                    ?.minByOrNull { abs((it?.duration ?: 0) - durationSeconds) }
-            )?.id ?: throw Exception("No matching track found")
+        val matchedItem = firstRes ?: searchRes.data
+            ?.items
+            ?.filter { it?.duration?.let { dur -> abs(dur - durationSeconds) <= 1 } ?: false }
+            ?.minByOrNull { abs((it?.duration ?: 0) - durationSeconds) }
+        val trackId = matchedItem?.id ?: throw Exception("No matching track found")
         val streamRes = ytMusic.getTidalStream(url, "$trackId").body<TidalStreamResponse>()
-        streamRes
+        TidalStreamResult(
+            stream = streamRes,
+            bpm = matchedItem.bpm,
+            musicKey = matchedItem.key,
+            keyScale = matchedItem.keyScale,
+        )
     }
 
     private fun getNParam(listFormat: List<PlayerResponse.StreamingData.Format>): String? =
@@ -2165,12 +2178,12 @@ class YouTube {
                                             Logger.e("Stream", "Tidal error: ${it.message}", it)
                                         }
                                     }.getOrNull()
-                            val audioData = res?.data?.manifest?.decodeTidalManifest()
+                            val audioData = res?.stream?.data?.manifest?.decodeTidalManifest()
                             if (audioData != null) {
                                 Logger.d("Stream", "Found potential 320kbps stream from Tidal: $res")
                                 audioData.urls.firstOrNull() ?: audioFormat?.url
                             } else {
-                                Logger.d("Stream", "Found potential 320kbps stream from Tidal manifest DASH: ${res?.data?.manifest}")
+                                Logger.d("Stream", "Found potential 320kbps stream from Tidal manifest DASH: ${res?.stream?.data?.manifest}")
                                 audioFormat?.url
                             }
                         } else {

@@ -24,18 +24,23 @@ import com.maxrave.domain.data.player.PlayerError
 import com.maxrave.domain.manager.DataStoreManager
 import com.maxrave.domain.mediaservice.player.MediaPlayerInterface
 import com.maxrave.domain.mediaservice.player.MediaPlayerListener
+import com.maxrave.domain.repository.StreamRepository
 import com.maxrave.logger.Logger
 import com.maxrave.media3.audio.BiquadFilter
 import com.maxrave.media3.audio.CrossfadeFilterAudioProcessor
+import com.maxrave.media3.exoplayer.CrossfadeExoPlayerAdapter.Companion.AUTO_FALLBACK_DURATION_MS
+import com.maxrave.media3.exoplayer.CrossfadeExoPlayerAdapter.Companion.MAX_PITCH_SHIFT_SEMITONES
 import com.maxrave.media3.service.mediasourcefactory.MergingMediaSourceFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
 
@@ -64,6 +69,7 @@ internal class CrossfadeExoPlayerAdapter(
     private val dataStoreManager: DataStoreManager,
     private val mediaSourceFactory: MergingMediaSourceFactory,
     private val audioAttributes: AudioAttributes,
+    private val streamRepository: StreamRepository,
 ) : MediaPlayerInterface {
     // ========== Internal State Enum (same as GstreamerPlayerAdapter) ==========
 
@@ -197,6 +203,10 @@ internal class CrossfadeExoPlayerAdapter(
     /** Index we're crossfading from; used when cancelling to revert localCurrentMediaItemIndex. */
     @Volatile
     private var crossfadeFromIndex = -1
+
+    // ========== AutoMix Metadata Cache ==========
+    // videoId -> audio analysis data from Tidal (populated externally when 320kbps stream is fetched)
+    private val audioMetaCache = ConcurrentHashMap<String, SongAudioMeta>()
 
     /**
      * Update crossfade state and notify listeners when it changes.
@@ -1464,9 +1474,7 @@ internal class CrossfadeExoPlayerAdapter(
                 secondaryPlayerFilter = nextFilter
                 // *** KEY: Move our custom listener from current to next player ***
                 setupPlayerListenerInternal(nextPlayer)
-                // Apply playback parameters immediately so the incoming track
-                // plays at the correct speed/pitch from the very start of crossfade
-                nextPlayer.playbackParameters = PlaybackParameters(internalPlaybackSpeed, internalPlaybackPitch)
+                // Playback parameters applied below after AutoMix ratios are calculated
                 nextPlayer.skipSilenceEnabled = internalSkipSilence
                 nextPlayer.volume = 0f
 
@@ -1486,6 +1494,31 @@ internal class CrossfadeExoPlayerAdapter(
                 //    (MediaItem was set during precache, before the swap).
                 //    This explicitly notifies MediaSession about the new track metadata.
                 forwardingPlayer.notifyMediaItemChanged()
+
+                // Capture current video ID BEFORE advancing localCurrentMediaItemIndex
+                val currentVideoId = playlist.getOrNull(localCurrentMediaItemIndex)?.mediaId ?: ""
+
+                // Lazily load AutoMix metadata from NewFormatEntity if not in cache
+                val isAutoMode = crossfadeDurationMs == DataStoreManager.CROSSFADE_DURATION_AUTO
+                if (isAutoMode) {
+                    loadAudioMetaIfNeeded(currentVideoId)
+                    loadAudioMetaIfNeeded(nextVideoId)
+                }
+                val resolvedConfigDurationMs =
+                    if (isAutoMode) {
+                        resolveAutoCrossfadeDurationMs(currentVideoId, nextVideoId)
+                    } else {
+                        crossfadeDurationMs
+                    }
+                val bpmSpeedRatio = if (isAutoMode) calculateBpmSpeedRatio(currentVideoId, nextVideoId) else 1.0f
+                val keyPitchRatio = if (isAutoMode) calculateKeyPitchRatio(currentVideoId, nextVideoId) else 1.0f
+
+                // Apply initial AutoMix playback parameters to incoming track
+                nextPlayer.playbackParameters =
+                    PlaybackParameters(
+                        bpmSpeedRatio * internalPlaybackSpeed,
+                        keyPitchRatio * internalPlaybackPitch,
+                    )
 
                 // Update now playing IMMEDIATELY (store from-index for cancel scenarios)
                 crossfadeFromIndex = localCurrentMediaItemIndex
@@ -1511,22 +1544,23 @@ internal class CrossfadeExoPlayerAdapter(
                         val pos = player.currentPosition
                         // Divide by playback speed: at 2x speed, remaining wall-clock time is halved
                         val speed = internalPlaybackSpeed.coerceAtLeast(0.1f)
-                        if (dur > 0 && pos >= 0) ((dur - pos) / speed).toLong() else crossfadeDurationMs.toLong()
-                    } ?: crossfadeDurationMs.toLong()
+                        if (dur > 0 && pos >= 0) ((dur - pos) / speed).toLong() else resolvedConfigDurationMs.toLong()
+                    } ?: resolvedConfigDurationMs.toLong()
 
                 val effectiveCrossfadeDurationMs =
-                    minOf(crossfadeDurationMs.toLong(), actualTimeRemaining)
+                    minOf(resolvedConfigDurationMs.toLong(), actualTimeRemaining)
                         .coerceAtLeast(1000L)
                         .toInt()
 
                 Logger.d(
                     TAG,
-                    "Crossfade duration: configured=${crossfadeDurationMs}ms, " +
+                    "Crossfade duration: configured=${resolvedConfigDurationMs}ms (auto=$isAutoMode), " +
+                        "bpmRatio=$bpmSpeedRatio, pitchRatio=$keyPitchRatio, " +
                         "actualRemaining=${actualTimeRemaining}ms, effective=${effectiveCrossfadeDurationMs}ms",
                 )
 
-                // Perform crossfade animation with effective duration
-                performCrossfade(nextIndex, nextPlayer, effectiveCrossfadeDurationMs)
+                // Perform crossfade animation with effective duration and AutoMix parameters
+                performCrossfade(nextIndex, nextPlayer, effectiveCrossfadeDurationMs, bpmSpeedRatio, keyPitchRatio)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Logger.e(TAG, "Crossfade error: ${e.message}", e)
@@ -1557,17 +1591,28 @@ internal class CrossfadeExoPlayerAdapter(
      * @param effectiveDurationMs The actual crossfade duration to use. May be shorter than
      *   the configured [crossfadeDurationMs] if URL resolution / buffering consumed
      *   part of the crossfade window.
+     * @param targetSpeedRatio BPM-based speed ratio for incoming track (1.0 = no adjustment).
+     *   Ramps from this value to 1.0 during crossfade so the track plays at natural speed after.
+     * @param targetPitchRatio Key-based pitch ratio for incoming track (1.0 = no adjustment).
+     *   Ramps from this value to 1.0 during crossfade.
      */
     private suspend fun performCrossfade(
         nextIndex: Int,
         nextPlayer: ExoPlayer,
         effectiveDurationMs: Int,
+        targetSpeedRatio: Float = 1.0f,
+        targetPitchRatio: Float = 1.0f,
     ) {
         val steps = 50 // 50 steps for smooth transition
         val delayPerStep = (effectiveDurationMs / steps).coerceAtLeast(20) // min 20ms per step
         val targetVolume = internalVolume
         val useDjFilter = djCrossfadeEnabled
-        Logger.d(TAG, "Crossfade animation: ${effectiveDurationMs}ms, $steps steps, ${delayPerStep}ms/step, dj=$useDjFilter")
+        val useAutoMixRamp = targetSpeedRatio != 1.0f || targetPitchRatio != 1.0f
+        Logger.d(
+            TAG,
+            "Crossfade animation: ${effectiveDurationMs}ms, $steps steps, ${delayPerStep}ms/step, " +
+                "dj=$useDjFilter, autoMix=$useAutoMixRamp (speed=$targetSpeedRatio, pitch=$targetPitchRatio)",
+        )
 
         // Setup DJ filters before starting animation
         if (useDjFilter) {
@@ -1601,14 +1646,45 @@ internal class CrossfadeExoPlayerAdapter(
                         nextPlayer.volume = fadeInVolume
 
                         // DJ-style filter sweep (alongside volume)
+                        // Asymmetric easing: creates a "clear overlap zone" in the middle
+                        // where both tracks are audible — mimics professional DJ mixing
                         if (useDjFilter) {
-                            // Outgoing track: LPF cutoff sweeps 20kHz -> 300Hz
+                            // Outgoing: ease-in (quadratic) — stays clear longer, then muffles quickly
+                            val lpfProgress = progress * progress
                             currentPlayerFilter?.cutoffFrequencyHz =
-                                exponentialInterpolate(LPF_START_HZ, LPF_END_HZ, progress)
+                                exponentialInterpolate(LPF_START_HZ, LPF_END_HZ, lpfProgress)
 
-                            // Incoming track: HPF cutoff sweeps 300Hz -> 20Hz
+                            // Incoming: ease-out (quadratic) — opens up early, then fine-tunes
+                            val hpfProgress = 1f - (1f - progress) * (1f - progress)
                             secondaryPlayerFilter?.cutoffFrequencyHz =
-                                exponentialInterpolate(HPF_START_HZ, HPF_END_HZ, progress)
+                                exponentialInterpolate(HPF_START_HZ, HPF_END_HZ, hpfProgress)
+                        }
+
+                        // AutoMix: crossfade BPM speed and key pitch on BOTH players
+                        // Outgoing: ramp from natural (1.0) → inverse ratio (meeting the incoming track)
+                        // Incoming: ramp from matched ratio → natural (1.0)
+                        // SonicAudioProcessor handles pitch-preserving speed changes
+                        if (useAutoMixRamp) {
+                            // Incoming player: matched → natural
+                            val incomingSpeed = lerp(targetSpeedRatio, 1.0f, progress)
+                            val incomingPitch = lerp(targetPitchRatio, 1.0f, progress)
+                            nextPlayer.playbackParameters =
+                                PlaybackParameters(
+                                    incomingSpeed * internalPlaybackSpeed,
+                                    incomingPitch * internalPlaybackPitch,
+                                )
+
+                            // Outgoing player: natural → inverse ratio
+                            // If incoming needs to slow down (ratio=0.92), outgoing speeds up (1/0.92≈1.087)
+                            val inverseSpeed = 1.0f / targetSpeedRatio
+                            val inversePitch = 1.0f / targetPitchRatio
+                            val outgoingSpeed = lerp(1.0f, inverseSpeed, progress)
+                            val outgoingPitch = lerp(1.0f, inversePitch, progress)
+                            currentPlayer?.playbackParameters =
+                                PlaybackParameters(
+                                    outgoingSpeed * internalPlaybackSpeed,
+                                    outgoingPitch * internalPlaybackPitch,
+                                )
                         }
 
                         delay(delayPerStep.toLong())
@@ -1621,6 +1697,9 @@ internal class CrossfadeExoPlayerAdapter(
                     // Cleanup DJ filters
                     currentPlayerFilter?.enabled = false
                     secondaryPlayerFilter?.enabled = false
+                    // Restore outgoing player's speed/pitch to natural
+                    currentPlayer?.playbackParameters =
+                        PlaybackParameters(internalPlaybackSpeed, internalPlaybackPitch)
                     // Cleanup player
                     nextPlayer.release()
                     secondaryPlayer = null
@@ -1630,12 +1709,235 @@ internal class CrossfadeExoPlayerAdapter(
             }
     }
 
+    // ========== AutoMix Public API ==========
+
+    /**
+     * Audio analysis metadata for a song, populated from Tidal search response.
+     */
+    data class SongAudioMeta(
+        val bpm: Int?,
+        val key: String?,
+        val keyScale: String?, // "MAJOR" or "MINOR"
+    )
+
+    /**
+     * Update the audio analysis metadata cache for a song.
+     * Called externally when Tidal 320kbps stream is fetched and BPM/key data is available.
+     * Data is used by Auto crossfade mode for beat-quantized duration, BPM matching, and key matching.
+     */
+    fun updateSongAudioMeta(
+        videoId: String,
+        bpm: Int?,
+        key: String?,
+        keyScale: String?,
+    ) {
+        if (bpm != null || key != null) {
+            audioMetaCache[videoId] = SongAudioMeta(bpm, key, keyScale)
+            Logger.d(TAG, "AutoMix meta updated: videoId=$videoId, bpm=$bpm, key=$key $keyScale")
+        }
+    }
+
+    // ========== AutoMix Internal Logic ==========
+
+    /**
+     * Lazily load audio analysis metadata from NewFormatEntity if not already in cache.
+     * Called before AutoMix calculations to ensure metadata is available.
+     */
+    private suspend fun loadAudioMetaIfNeeded(videoId: String) {
+        if (videoId.isBlank() || audioMetaCache.containsKey(videoId)) return
+        try {
+            val format = streamRepository.getNewFormat(videoId).firstOrNull()
+            if (format == null) {
+                Logger.d(TAG, "AutoMix meta: no NewFormatEntity found for videoId=$videoId")
+                return
+            }
+            if (format.bpm != null || format.musicKey != null) {
+                audioMetaCache[videoId] = SongAudioMeta(format.bpm, format.musicKey, format.keyScale)
+                Logger.d(TAG, "AutoMix meta loaded: videoId=$videoId, bpm=${format.bpm}, key=${format.musicKey} ${format.keyScale}")
+            } else {
+                Logger.d(TAG, "AutoMix meta: format exists but no bpm/key data for videoId=$videoId")
+            }
+        } catch (e: Exception) {
+            Logger.w(TAG, "Failed to load AutoMix meta for $videoId: ${e.message}")
+        }
+    }
+
+    /**
+     * Linear interpolation between two values.
+     */
+    private fun lerp(
+        start: Float,
+        end: Float,
+        t: Float,
+    ): Float = start + (end - start) * t
+
+    /**
+     * Resolve the crossfade duration for Auto mode based on BPM data.
+     * Chooses the beat count (4, 8, or 16) that produces a duration closest to ~8 seconds.
+     * Falls back to [AUTO_FALLBACK_DURATION_MS] when no BPM data is available.
+     */
+    private fun resolveAutoCrossfadeDurationMs(
+        currentVideoId: String,
+        nextVideoId: String,
+    ): Int {
+        val currentBpm = audioMetaCache[currentVideoId]?.bpm
+        val nextBpm = audioMetaCache[nextVideoId]?.bpm
+        // Use current song's BPM (or next song's as fallback) for beat-quantized duration
+        val bpm = currentBpm ?: nextBpm ?: return AUTO_FALLBACK_DURATION_MS
+
+        if (bpm <= 0) return AUTO_FALLBACK_DURATION_MS
+
+        val beatMs = 60_000.0 / bpm
+        // Choose beat count that produces a duration closest to the target (~8 seconds)
+        val targetMs = AUTO_TARGET_DURATION_MS
+        val bestBeatCount =
+            BEAT_COUNT_OPTIONS.minByOrNull { abs(it * beatMs - targetMs) }
+                ?: DEFAULT_BEAT_COUNT
+        val duration = (bestBeatCount * beatMs).toInt()
+
+        return duration.coerceIn(AUTO_MIN_DURATION_MS, AUTO_MAX_DURATION_MS)
+    }
+
+    /**
+     * Calculate the playback speed ratio to match the incoming track's BPM to the current track's BPM.
+     * Returns a ratio to apply to the incoming track's speed (e.g., 1.05 = speed up 5%).
+     * Handles halftime/doubletime harmonic BPM relationships (e.g., 70 BPM ≈ 140 BPM / 2).
+     * Returns 1.0 if no BPM data or the ratio exceeds the safe adjustment range.
+     */
+    private fun calculateBpmSpeedRatio(
+        currentVideoId: String,
+        nextVideoId: String,
+    ): Float {
+        val currentMeta = audioMetaCache[currentVideoId]
+        val nextMeta = audioMetaCache[nextVideoId]
+        val currentBpm = currentMeta?.bpm
+        val nextBpm = nextMeta?.bpm
+
+        if (currentBpm == null || nextBpm == null) {
+            Logger.d(
+                TAG,
+                "AutoMix BPM: missing data - current=$currentBpm (cached=${currentMeta != null}), " +
+                    "next=$nextBpm (cached=${nextMeta != null})",
+            )
+            return 1.0f
+        }
+        if (currentBpm <= 0 || nextBpm <= 0) return 1.0f
+
+        var ratio = currentBpm.toFloat() / nextBpm.toFloat()
+
+        // Normalize halftime/doubletime relationships (e.g., 140/70 → 1.0, 70/140 → 1.0)
+        while (ratio > 1.5f) ratio /= 2f
+        while (ratio < 0.67f) ratio *= 2f
+
+        Logger.d(TAG, "AutoMix BPM: current=$currentBpm, next=$nextBpm, ratio=${"%.4f".format(ratio)}")
+
+        // Only apply if adjustment is within safe range (avoids unnatural artifacts)
+        return if (ratio in BPM_RATIO_MIN..BPM_RATIO_MAX) {
+            ratio
+        } else {
+            Logger.d(TAG, "AutoMix BPM: ratio ${"%.4f".format(ratio)} outside safe range [$BPM_RATIO_MIN..$BPM_RATIO_MAX], skipping")
+            1.0f
+        }
+    }
+
+    /**
+     * Calculate the pitch ratio to shift the incoming track's key toward the current track's key.
+     * Uses chromatic semitone distance; only applies adjustment within ±[MAX_PITCH_SHIFT_SEMITONES].
+     * Returns 1.0 if no key data, unknown keys, or the shift exceeds the quality threshold.
+     */
+    private fun calculateKeyPitchRatio(
+        currentVideoId: String,
+        nextVideoId: String,
+    ): Float {
+        val currentMeta = audioMetaCache[currentVideoId]
+        val nextMeta = audioMetaCache[nextVideoId]
+        val currentKey = currentMeta?.key
+        val nextKey = nextMeta?.key
+
+        if (currentKey == null || nextKey == null) {
+            Logger.d(
+                TAG,
+                "AutoMix Key: missing data - currentKey=$currentKey (cached=${currentMeta != null}), " +
+                    "nextKey=$nextKey (cached=${nextMeta != null})",
+            )
+            return 1.0f
+        }
+
+        val currentSemitone = keyToSemitone(currentKey)
+        val nextSemitone = keyToSemitone(nextKey)
+        if (currentSemitone < 0 || nextSemitone < 0) {
+            Logger.d(
+                TAG,
+                "AutoMix Key: unknown key format - currentKey='$currentKey' ($currentSemitone), " +
+                    "nextKey='$nextKey' ($nextSemitone)",
+            )
+            return 1.0f
+        }
+
+        // Shortest distance around the chromatic circle (range: -6 to +6)
+        var diff = (nextSemitone - currentSemitone + 12) % 12
+        if (diff > 6) diff -= 12
+
+        Logger.d(
+            TAG,
+            "AutoMix Key: currentKey=$currentKey ($currentSemitone), " +
+                "nextKey=$nextKey ($nextSemitone), diff=$diff, scale: current=${currentMeta.keyScale}, next=${nextMeta.keyScale}",
+        )
+
+        // Only adjust if within quality threshold
+        if (abs(diff) > MAX_PITCH_SHIFT_SEMITONES) {
+            Logger.d(TAG, "AutoMix Key: diff=$diff exceeds max ±$MAX_PITCH_SHIFT_SEMITONES semitones, skipping")
+            return 1.0f
+        }
+        if (diff == 0) return 1.0f
+
+        // Shift incoming track DOWN by diff semitones to match current key
+        // pitch_ratio = 2^(-diff/12)
+        val pitchRatio = exp(ln(2.0) * (-diff.toDouble()) / 12.0).toFloat()
+
+        Logger.d(TAG, "AutoMix pitch: diff=$diff, ratio=${"%.4f".format(pitchRatio)}")
+
+        return pitchRatio
+    }
+
+    /**
+     * Map a musical key name to its chromatic semitone number (0-11).
+     * C=0, C#/Db=1, D=2, ..., B=11. Returns -1 for unknown keys.
+     */
+    private fun keyToSemitone(key: String): Int =
+        when (key.trim()) {
+            "C" -> 0
+            "C#", "Db" -> 1
+            "D" -> 2
+            "D#", "Eb" -> 3
+            "E" -> 4
+            "F" -> 5
+            "F#", "Gb" -> 6
+            "G" -> 7
+            "G#", "Ab" -> 8
+            "A" -> 9
+            "A#", "Bb" -> 10
+            "B" -> 11
+            else -> -1
+        }
+
     companion object {
         // DJ crossfade filter frequency bounds
         private const val LPF_START_HZ = 20000f // Low-pass starts wide open
-        private const val LPF_END_HZ = 100f // Low-pass ends muffled
-        private const val HPF_START_HZ = 5000f // High-pass starts cutting bass
+        private const val LPF_END_HZ = 200f // Low-pass ends muffled (keeps bass thump like Pioneer DJM)
+        private const val HPF_START_HZ = 8000f // High-pass starts filtering highs only (natural "opening up" feel)
         private const val HPF_END_HZ = 20f // High-pass ends wide open
+
+        // AutoMix constants (targeting ~25s like Apple Music Automix)
+        private const val AUTO_FALLBACK_DURATION_MS = 25000 // Default when no BPM data
+        private const val AUTO_TARGET_DURATION_MS = 25000.0 // Target duration for beat-quantized calculation
+        private const val AUTO_MIN_DURATION_MS = 10000
+        private const val AUTO_MAX_DURATION_MS = 35000
+        private val BEAT_COUNT_OPTIONS = intArrayOf(16, 32, 48, 64)
+        private const val DEFAULT_BEAT_COUNT = 32
+        private const val BPM_RATIO_MIN = 0.5f // Max 50% slower
+        private const val BPM_RATIO_MAX = 1.5f // Max 50% faster
+        private const val MAX_PITCH_SHIFT_SEMITONES = 6 // Max ±6 semitones for quality
     }
 
     /**
@@ -1747,7 +2049,15 @@ internal class CrossfadeExoPlayerAdapter(
                                     // If next track is precached, trigger at exactly crossfadeDurationMs.
                                     // If NOT precached, trigger 3s earlier to allow preparation time.
                                     val preparationBufferMs = if (isPrecached) 0L else 3000L
-                                    val triggerThreshold = crossfadeDurationMs.toLong() + preparationBufferMs
+                                    // In Auto mode, calculate beat-quantized duration for trigger threshold.
+                                    val resolvedDurationMs =
+                                        if (crossfadeDurationMs == DataStoreManager.CROSSFADE_DURATION_AUTO) {
+                                            val currentVideoId = playlist.getOrNull(localCurrentMediaItemIndex)?.mediaId ?: ""
+                                            resolveAutoCrossfadeDurationMs(currentVideoId, nextVideoId ?: "")
+                                        } else {
+                                            crossfadeDurationMs
+                                        }
+                                    val triggerThreshold = resolvedDurationMs.toLong() + preparationBufferMs
                                     if (timeRemaining in 1..triggerThreshold) {
                                         if (hasNextMediaItem()) {
                                             val nextIndex = getNextMediaItemIndex()

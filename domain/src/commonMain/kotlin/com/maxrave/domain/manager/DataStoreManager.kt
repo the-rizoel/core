@@ -366,6 +366,8 @@ interface DataStoreManager {
         const val TRUE = "TRUE"
         const val FALSE = "FALSE"
 
+        const val CROSSFADE_DURATION_AUTO = 0
+
         const val PROXY_TYPE_HTTP = "http"
         const val PROXY_TYPE_SOCKS = "socks"
 
