@@ -29,7 +29,6 @@ import com.maxrave.logger.Logger
 import com.maxrave.media3.audio.BiquadFilter
 import com.maxrave.media3.audio.CrossfadeFilterAudioProcessor
 import com.maxrave.media3.exoplayer.CrossfadeExoPlayerAdapter.Companion.AUTO_FALLBACK_DURATION_MS
-import com.maxrave.media3.exoplayer.CrossfadeExoPlayerAdapter.Companion.MAX_PITCH_SHIFT_SEMITONES
 import com.maxrave.media3.service.mediasourcefactory.MergingMediaSourceFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -1513,11 +1512,11 @@ internal class CrossfadeExoPlayerAdapter(
                 val bpmSpeedRatio = if (isAutoMode) calculateBpmSpeedRatio(currentVideoId, nextVideoId) else 1.0f
                 val keyPitchRatio = if (isAutoMode) calculateKeyPitchRatio(currentVideoId, nextVideoId) else 1.0f
 
-                // Apply initial AutoMix playback parameters to incoming track
+                // Apply initial AutoMix playback parameters to incoming track (quantized)
                 nextPlayer.playbackParameters =
                     PlaybackParameters(
-                        bpmSpeedRatio * internalPlaybackSpeed,
-                        keyPitchRatio * internalPlaybackPitch,
+                        quantize(bpmSpeedRatio * internalPlaybackSpeed),
+                        quantize(keyPitchRatio * internalPlaybackPitch),
                     )
 
                 // Update now playing IMMEDIATELY (store from-index for cancel scenarios)
@@ -1628,6 +1627,12 @@ internal class CrossfadeExoPlayerAdapter(
             }
         }
 
+        // Track last quantized speed/pitch to avoid redundant PlaybackParameters updates
+        var lastIncomingSpeed = -1f
+        var lastIncomingPitch = -1f
+        var lastOutgoingSpeed = -1f
+        var lastOutgoingPitch = -1f
+
         crossfadeJob?.cancel()
         crossfadeJob =
             coroutineScope.launch {
@@ -1646,45 +1651,52 @@ internal class CrossfadeExoPlayerAdapter(
                         nextPlayer.volume = fadeInVolume
 
                         // DJ-style filter sweep (alongside volume)
-                        // Asymmetric easing: creates a "clear overlap zone" in the middle
-                        // where both tracks are audible — mimics professional DJ mixing
+                        // Smoothstep (S-curve): filters hold at both ends, sweep aggressively
+                        // in the middle — creates a distinct "transition point" like a DJ
+                        // turning both filter knobs simultaneously
                         if (useDjFilter) {
-                            // Outgoing: ease-in (quadratic) — stays clear longer, then muffles quickly
-                            val lpfProgress = progress * progress
+                            val smoothProgress = progress * progress * (3f - 2f * progress)
+                            // Outgoing: LPF sweeps 20kHz → 200Hz
                             currentPlayerFilter?.cutoffFrequencyHz =
-                                exponentialInterpolate(LPF_START_HZ, LPF_END_HZ, lpfProgress)
+                                exponentialInterpolate(LPF_START_HZ, LPF_END_HZ, smoothProgress)
 
-                            // Incoming: ease-out (quadratic) — opens up early, then fine-tunes
-                            val hpfProgress = 1f - (1f - progress) * (1f - progress)
+                            // Incoming: HPF sweeps 8kHz → 20Hz
                             secondaryPlayerFilter?.cutoffFrequencyHz =
-                                exponentialInterpolate(HPF_START_HZ, HPF_END_HZ, hpfProgress)
+                                exponentialInterpolate(HPF_START_HZ, HPF_END_HZ, smoothProgress)
                         }
 
                         // AutoMix: crossfade BPM speed and key pitch on BOTH players
-                        // Outgoing: ramp from natural (1.0) → inverse ratio (meeting the incoming track)
+                        // Outgoing: ramp from natural (1.0) → inverse ratio
                         // Incoming: ramp from matched ratio → natural (1.0)
-                        // SonicAudioProcessor handles pitch-preserving speed changes
+                        // Quantize to SPEED_PITCH_STEP to avoid SonicAudioProcessor
+                        // popping from too-frequent micro-adjustments
                         if (useAutoMixRamp) {
                             // Incoming player: matched → natural
-                            val incomingSpeed = lerp(targetSpeedRatio, 1.0f, progress)
-                            val incomingPitch = lerp(targetPitchRatio, 1.0f, progress)
-                            nextPlayer.playbackParameters =
-                                PlaybackParameters(
-                                    incomingSpeed * internalPlaybackSpeed,
-                                    incomingPitch * internalPlaybackPitch,
-                                )
+                            val rawInSpeed = lerp(targetSpeedRatio, 1.0f, progress)
+                            val rawInPitch = lerp(targetPitchRatio, 1.0f, progress)
+                            val qInSpeed = quantize(rawInSpeed * internalPlaybackSpeed)
+                            val qInPitch = quantize(rawInPitch * internalPlaybackPitch)
+
+                            // Only update if quantized value changed (avoids redundant resets)
+                            if (qInSpeed != lastIncomingSpeed || qInPitch != lastIncomingPitch) {
+                                nextPlayer.playbackParameters = PlaybackParameters(qInSpeed, qInPitch)
+                                lastIncomingSpeed = qInSpeed
+                                lastIncomingPitch = qInPitch
+                            }
 
                             // Outgoing player: natural → inverse ratio
-                            // If incoming needs to slow down (ratio=0.92), outgoing speeds up (1/0.92≈1.087)
                             val inverseSpeed = 1.0f / targetSpeedRatio
                             val inversePitch = 1.0f / targetPitchRatio
-                            val outgoingSpeed = lerp(1.0f, inverseSpeed, progress)
-                            val outgoingPitch = lerp(1.0f, inversePitch, progress)
-                            currentPlayer?.playbackParameters =
-                                PlaybackParameters(
-                                    outgoingSpeed * internalPlaybackSpeed,
-                                    outgoingPitch * internalPlaybackPitch,
-                                )
+                            val rawOutSpeed = lerp(1.0f, inverseSpeed, progress)
+                            val rawOutPitch = lerp(1.0f, inversePitch, progress)
+                            val qOutSpeed = quantize(rawOutSpeed * internalPlaybackSpeed)
+                            val qOutPitch = quantize(rawOutPitch * internalPlaybackPitch)
+
+                            if (qOutSpeed != lastOutgoingSpeed || qOutPitch != lastOutgoingPitch) {
+                                currentPlayer?.playbackParameters = PlaybackParameters(qOutSpeed, qOutPitch)
+                                lastOutgoingSpeed = qOutSpeed
+                                lastOutgoingPitch = qOutPitch
+                            }
                         }
 
                         delay(delayPerStep.toLong())
@@ -1772,6 +1784,14 @@ internal class CrossfadeExoPlayerAdapter(
     ): Float = start + (end - start) * t
 
     /**
+     * Quantize a speed/pitch value to the nearest [SPEED_PITCH_STEP] (2%).
+     * Prevents SonicAudioProcessor from resetting on micro-adjustments that
+     * cause audible popping/clicking artifacts.
+     */
+    private fun quantize(value: Float): Float =
+        (Math.round(value / SPEED_PITCH_STEP) * SPEED_PITCH_STEP)
+
+    /**
      * Resolve the crossfade duration for Auto mode based on BPM data.
      * Chooses the beat count (4, 8, or 16) that produces a duration closest to ~8 seconds.
      * Falls back to [AUTO_FALLBACK_DURATION_MS] when no BPM data is available.
@@ -1832,18 +1852,80 @@ internal class CrossfadeExoPlayerAdapter(
         Logger.d(TAG, "AutoMix BPM: current=$currentBpm, next=$nextBpm, ratio=${"%.4f".format(ratio)}")
 
         // Only apply if adjustment is within safe range (avoids unnatural artifacts)
+        // Quantize to SPEED_PITCH_STEP to avoid SonicAudioProcessor artifacts
         return if (ratio in BPM_RATIO_MIN..BPM_RATIO_MAX) {
-            ratio
+            quantize(ratio)
         } else {
             Logger.d(TAG, "AutoMix BPM: ratio ${"%.4f".format(ratio)} outside safe range [$BPM_RATIO_MIN..$BPM_RATIO_MAX], skipping")
             1.0f
         }
     }
 
+    // ========== Camelot Wheel Key Matching ==========
+
     /**
-     * Calculate the pitch ratio to shift the incoming track's key toward the current track's key.
-     * Uses chromatic semitone distance; only applies adjustment within ±[MAX_PITCH_SHIFT_SEMITONES].
-     * Returns 1.0 if no key data, unknown keys, or the shift exceeds the quality threshold.
+     * Camelot Wheel position: number (1-12) + type (minor=A, major=B).
+     * Standard DJ key compatibility system — adjacent codes are harmonically compatible.
+     */
+    private data class CamelotCode(val number: Int, val isMinor: Boolean) {
+        override fun toString(): String = "$number${if (isMinor) "A" else "B"}"
+    }
+
+    /**
+     * Map a musical key + scale to its Camelot Wheel code.
+     *
+     * Camelot Wheel (minor = A, major = B):
+     *  1A=Abm  1B=B     |  7A=Dm   7B=F
+     *  2A=Ebm  2B=F#    |  8A=Am   8B=C
+     *  3A=Bbm  3B=Db    |  9A=Em   9B=G
+     *  4A=Fm   4B=Ab    | 10A=Bm  10B=D
+     *  5A=Cm   5B=Eb    | 11A=F#m 11B=A
+     *  6A=Gm   6B=Bb    | 12A=C#m 12B=E
+     */
+    private fun keyToCamelot(key: String, keyScale: String?): CamelotCode? {
+        val semitone = keyToSemitone(key)
+        if (semitone < 0) return null
+
+        val isMinor = keyScale?.uppercase()?.contains("MIN") == true
+
+        // Camelot number lookup by chromatic semitone (C=0, C#=1, D=2, ... B=11)
+        //                                   C  C# D  D# E  F  F# G  G# A  A# B
+        val minorCamelotByPitch = intArrayOf( 5, 12, 7,  2, 9, 4, 11, 6,  1, 8,  3, 10)
+        val majorCamelotByPitch = intArrayOf( 8,  3, 10, 5, 12, 7,  2, 9,  4, 11, 6,  1)
+
+        val number = if (isMinor) minorCamelotByPitch[semitone] else majorCamelotByPitch[semitone]
+        return CamelotCode(number, isMinor)
+    }
+
+    /**
+     * Calculate the Camelot distance between two keys.
+     * Considers both the circular number distance (0-6) and type difference (A/B).
+     *
+     * Compatible transitions (distance <= 1):
+     * - Same code (8A->8A): distance 0
+     * - Adjacent number, same type (8A->7A, 8A->9A): distance 1
+     * - Same number, different type / relative key (8A->8B): distance 1
+     *
+     * Near-compatible (distance 2, same type):
+     * - +-2 same type (8A->10A): 2 semitones apart (whole tone) — safe to shift
+     */
+    private fun camelotDistance(a: CamelotCode, b: CamelotCode): Int {
+        val numberDiff = abs(a.number - b.number)
+        val circularDist = minOf(numberDiff, 12 - numberDiff)
+        val typeDiff = if (a.isMinor != b.isMinor) 1 else 0
+        return circularDist + typeDiff
+    }
+
+    /**
+     * Calculate pitch ratio using Camelot Wheel for musically correct key matching.
+     *
+     * Rules based on music theory:
+     * 1. Camelot distance <= 1: already harmonically compatible -> no shift
+     * 2. Camelot distance = 2, same type: whole tone (2 semitones) -> safe to shift
+     * 3. Otherwise: too far or cross-type -> don't shift (would cause artifacts)
+     *
+     * Only shifts by whole tone (2 semitones) — the smallest interval that
+     * stays within both major and minor scales and avoids dissonance.
      */
     private fun calculateKeyPitchRatio(
         currentVideoId: String,
@@ -1863,41 +1945,60 @@ internal class CrossfadeExoPlayerAdapter(
             return 1.0f
         }
 
-        val currentSemitone = keyToSemitone(currentKey)
-        val nextSemitone = keyToSemitone(nextKey)
-        if (currentSemitone < 0 || nextSemitone < 0) {
+        val currentCamelot = keyToCamelot(currentKey, currentMeta.keyScale)
+        val nextCamelot = keyToCamelot(nextKey, nextMeta.keyScale)
+
+        if (currentCamelot == null || nextCamelot == null) {
             Logger.d(
                 TAG,
-                "AutoMix Key: unknown key format - currentKey='$currentKey' ($currentSemitone), " +
-                    "nextKey='$nextKey' ($nextSemitone)",
+                "AutoMix Key: unknown key format - currentKey='$currentKey' ${currentMeta.keyScale}, " +
+                    "nextKey='$nextKey' ${nextMeta.keyScale}",
             )
             return 1.0f
         }
 
-        // Shortest distance around the chromatic circle (range: -6 to +6)
-        var diff = (nextSemitone - currentSemitone + 12) % 12
-        if (diff > 6) diff -= 12
+        val dist = camelotDistance(currentCamelot, nextCamelot)
 
         Logger.d(
             TAG,
-            "AutoMix Key: currentKey=$currentKey ($currentSemitone), " +
-                "nextKey=$nextKey ($nextSemitone), diff=$diff, scale: current=${currentMeta.keyScale}, next=${nextMeta.keyScale}",
+            "AutoMix Key: current=$currentKey ${currentMeta.keyScale} ($currentCamelot), " +
+                "next=$nextKey ${nextMeta.keyScale} ($nextCamelot), camelotDist=$dist",
         )
 
-        // Only adjust if within quality threshold
-        if (abs(diff) > MAX_PITCH_SHIFT_SEMITONES) {
-            Logger.d(TAG, "AutoMix Key: diff=$diff exceeds max ±$MAX_PITCH_SHIFT_SEMITONES semitones, skipping")
+        // Already harmonically compatible — no shift needed
+        if (dist <= 1) {
+            Logger.d(TAG, "AutoMix Key: compatible (dist=$dist), no shift")
             return 1.0f
         }
-        if (diff == 0) return 1.0f
 
-        // Shift incoming track DOWN by diff semitones to match current key
-        // pitch_ratio = 2^(-diff/12)
-        val pitchRatio = exp(ln(2.0) * (-diff.toDouble()) / 12.0).toFloat()
+        // Distance 2, same type: exactly a whole tone (2 semitones) apart
+        // This is the only safe shift — stays within scale degrees
+        if (dist == 2 && currentCamelot.isMinor == nextCamelot.isMinor) {
+            val currentSemitone = keyToSemitone(currentKey)
+            val nextSemitone = keyToSemitone(nextKey)
 
-        Logger.d(TAG, "AutoMix pitch: diff=$diff, ratio=${"%.4f".format(pitchRatio)}")
+            // Chromatic direction (shortest path around circle)
+            var chromDiff = (nextSemitone - currentSemitone + 12) % 12
+            if (chromDiff > 6) chromDiff -= 12
 
-        return pitchRatio
+            // Sanity check: Camelot distance 2 same type = +-2 semitones (whole tone)
+            if (abs(chromDiff) != 2) {
+                Logger.d(TAG, "AutoMix Key: unexpected chromDiff=$chromDiff for Camelot dist=2, skipping")
+                return 1.0f
+            }
+
+            // Shift incoming track by whole tone to match current key
+            val pitchRatio = exp(ln(2.0) * (-chromDiff.toDouble()) / 12.0).toFloat()
+            Logger.d(
+                TAG,
+                "AutoMix Key: whole tone shift ${chromDiff} semitones, ratio=${"%.4f".format(pitchRatio)}",
+            )
+            return pitchRatio
+        }
+
+        // Distance >= 3 or cross-type distance 2: too far, shifting would sound unnatural
+        Logger.d(TAG, "AutoMix Key: dist=$dist too far apart, no shift")
+        return 1.0f
     }
 
     /**
@@ -1925,7 +2026,7 @@ internal class CrossfadeExoPlayerAdapter(
         // DJ crossfade filter frequency bounds
         private const val LPF_START_HZ = 20000f // Low-pass starts wide open
         private const val LPF_END_HZ = 200f // Low-pass ends muffled (keeps bass thump like Pioneer DJM)
-        private const val HPF_START_HZ = 8000f // High-pass starts filtering highs only (natural "opening up" feel)
+        private const val HPF_START_HZ = 8000f // High-pass starts cutting mid-highs (4th order = steep rolloff)
         private const val HPF_END_HZ = 20f // High-pass ends wide open
 
         // AutoMix constants (targeting ~25s like Apple Music Automix)
@@ -1937,7 +2038,10 @@ internal class CrossfadeExoPlayerAdapter(
         private const val DEFAULT_BEAT_COUNT = 32
         private const val BPM_RATIO_MIN = 0.5f // Max 50% slower
         private const val BPM_RATIO_MAX = 1.5f // Max 50% faster
-        private const val MAX_PITCH_SHIFT_SEMITONES = 6 // Max ±6 semitones for quality
+
+        // Quantization step for speed/pitch ramp (0.5% = 0.005)
+        // Prevents SonicAudioProcessor from popping on micro-adjustments
+        private const val SPEED_PITCH_STEP = 0.02f
     }
 
     /**

@@ -22,31 +22,43 @@ class BiquadFilter {
         HIGH_PASS,
     }
 
-    // Filter coefficients (normalized: a0 = 1.0)
-    @Volatile private var b0 = 1.0
-    @Volatile private var b1 = 0.0
-    @Volatile private var b2 = 0.0
-    @Volatile private var a1 = 0.0
-    @Volatile private var a2 = 0.0
+    // Two cascaded biquad stages → 4th order (24 dB/octave)
+    // Stage 1 coefficients
+    @Volatile private var b0_1 = 1.0
+    @Volatile private var b1_1 = 0.0
+    @Volatile private var b2_1 = 0.0
+    @Volatile private var a1_1 = 0.0
+    @Volatile private var a2_1 = 0.0
 
-    // Per-channel state (left)
-    private var x1L = 0.0
-    private var x2L = 0.0
-    private var y1L = 0.0
-    private var y2L = 0.0
+    // Stage 2 coefficients
+    @Volatile private var b0_2 = 1.0
+    @Volatile private var b1_2 = 0.0
+    @Volatile private var b2_2 = 0.0
+    @Volatile private var a1_2 = 0.0
+    @Volatile private var a2_2 = 0.0
 
-    // Per-channel state (right)
-    private var x1R = 0.0
-    private var x2R = 0.0
-    private var y1R = 0.0
-    private var y2R = 0.0
+    // Stage 1 per-channel state (left)
+    private var s1_x1L = 0.0; private var s1_x2L = 0.0
+    private var s1_y1L = 0.0; private var s1_y2L = 0.0
+    // Stage 1 per-channel state (right)
+    private var s1_x1R = 0.0; private var s1_x2R = 0.0
+    private var s1_y1R = 0.0; private var s1_y2R = 0.0
+
+    // Stage 2 per-channel state (left)
+    private var s2_x1L = 0.0; private var s2_x2L = 0.0
+    private var s2_y1L = 0.0; private var s2_y2L = 0.0
+    // Stage 2 per-channel state (right)
+    private var s2_x1R = 0.0; private var s2_x2R = 0.0
+    private var s2_y1R = 0.0; private var s2_y2R = 0.0
 
     /**
      * Recalculate filter coefficients for the given parameters.
+     * Uses two cascaded Butterworth stages for 4th-order (24 dB/octave) rolloff,
+     * matching professional DJ mixer filter steepness.
      *
      * @param cutoffHz Cutoff frequency in Hz.
      * @param sampleRate Sample rate in Hz (e.g. 44100, 48000).
-     * @param q Quality factor. 0.707 (Butterworth) gives smooth, non-resonant rolloff.
+     * @param q Quality factor per stage. 0.707 (Butterworth) gives maximally flat passband.
      * @param type LOW_PASS or HIGH_PASS.
      */
     fun updateCoefficients(
@@ -61,76 +73,87 @@ class BiquadFilter {
         val cosOmega = cos(omega)
         val alpha = sinOmega / (2.0 * q)
 
+        // Both stages use identical coefficients (cascaded identical Butterworth)
         val rawA0: Double
         when (type) {
             FilterType.LOW_PASS -> {
-                b0 = (1.0 - cosOmega) / 2.0
-                b1 = 1.0 - cosOmega
-                b2 = (1.0 - cosOmega) / 2.0
+                val v = (1.0 - cosOmega) / 2.0
+                b0_1 = v; b0_2 = v
+                b1_1 = 1.0 - cosOmega; b1_2 = b1_1
+                b2_1 = v; b2_2 = v
                 rawA0 = 1.0 + alpha
-                a1 = -2.0 * cosOmega
-                a2 = 1.0 - alpha
+                a1_1 = -2.0 * cosOmega; a1_2 = a1_1
+                a2_1 = 1.0 - alpha; a2_2 = a2_1
             }
 
             FilterType.HIGH_PASS -> {
-                b0 = (1.0 + cosOmega) / 2.0
-                b1 = -(1.0 + cosOmega)
-                b2 = (1.0 + cosOmega) / 2.0
+                val v = (1.0 + cosOmega) / 2.0
+                b0_1 = v; b0_2 = v
+                b1_1 = -(1.0 + cosOmega); b1_2 = b1_1
+                b2_1 = v; b2_2 = v
                 rawA0 = 1.0 + alpha
-                a1 = -2.0 * cosOmega
-                a2 = 1.0 - alpha
+                a1_1 = -2.0 * cosOmega; a1_2 = a1_1
+                a2_1 = 1.0 - alpha; a2_2 = a2_1
             }
         }
 
-        // Normalize so a0 = 1.0
-        b0 /= rawA0
-        b1 /= rawA0
-        b2 /= rawA0
-        a1 /= rawA0
-        a2 /= rawA0
+        // Normalize both stages
+        b0_1 /= rawA0; b1_1 /= rawA0; b2_1 /= rawA0; a1_1 /= rawA0; a2_1 /= rawA0
+        b0_2 /= rawA0; b1_2 /= rawA0; b2_2 /= rawA0; a1_2 /= rawA0; a2_2 /= rawA0
     }
 
     /**
-     * Process a single mono sample through the filter (left channel state).
+     * Process a single mono sample through both cascaded stages.
      */
     fun processSampleMono(input: Double): Double {
-        val output = b0 * input + b1 * x1L + b2 * x2L - a1 * y1L - a2 * y2L
-        x2L = x1L
-        x1L = input
-        y2L = y1L
-        y1L = output
+        // Stage 1
+        val mid = b0_1 * input + b1_1 * s1_x1L + b2_1 * s1_x2L - a1_1 * s1_y1L - a2_1 * s1_y2L
+        s1_x2L = s1_x1L; s1_x1L = input
+        s1_y2L = s1_y1L; s1_y1L = mid
+
+        // Stage 2
+        val output = b0_2 * mid + b1_2 * s2_x1L + b2_2 * s2_x2L - a1_2 * s2_y1L - a2_2 * s2_y2L
+        s2_x2L = s2_x1L; s2_x1L = mid
+        s2_y2L = s2_y1L; s2_y1L = output
+
         return output
     }
 
     /**
-     * Process a stereo sample pair through the filter.
+     * Process a stereo sample pair through both cascaded stages.
      * Each channel maintains independent filter state.
      */
     fun processStereo(inputLeft: Double, inputRight: Double): Pair<Double, Double> {
-        // Left channel
-        val outL = b0 * inputLeft + b1 * x1L + b2 * x2L - a1 * y1L - a2 * y2L
-        x2L = x1L
-        x1L = inputLeft
-        y2L = y1L
-        y1L = outL
+        // Left: Stage 1
+        val midL = b0_1 * inputLeft + b1_1 * s1_x1L + b2_1 * s1_x2L - a1_1 * s1_y1L - a2_1 * s1_y2L
+        s1_x2L = s1_x1L; s1_x1L = inputLeft
+        s1_y2L = s1_y1L; s1_y1L = midL
+        // Left: Stage 2
+        val outL = b0_2 * midL + b1_2 * s2_x1L + b2_2 * s2_x2L - a1_2 * s2_y1L - a2_2 * s2_y2L
+        s2_x2L = s2_x1L; s2_x1L = midL
+        s2_y2L = s2_y1L; s2_y1L = outL
 
-        // Right channel
-        val outR = b0 * inputRight + b1 * x1R + b2 * x2R - a1 * y1R - a2 * y2R
-        x2R = x1R
-        x1R = inputRight
-        y2R = y1R
-        y1R = outR
+        // Right: Stage 1
+        val midR = b0_1 * inputRight + b1_1 * s1_x1R + b2_1 * s1_x2R - a1_1 * s1_y1R - a2_1 * s1_y2R
+        s1_x2R = s1_x1R; s1_x1R = inputRight
+        s1_y2R = s1_y1R; s1_y1R = midR
+        // Right: Stage 2
+        val outR = b0_2 * midR + b1_2 * s2_x1R + b2_2 * s2_x2R - a1_2 * s2_y1R - a2_2 * s2_y2R
+        s2_x2R = s2_x1R; s2_x1R = midR
+        s2_y2R = s2_y1R; s2_y1R = outR
 
         return outL to outR
     }
 
     /**
-     * Reset all filter state (clears history).
+     * Reset all filter state (clears history for both stages).
      * Call when starting a new audio stream or disabling the filter.
      */
     fun reset() {
-        x1L = 0.0; x2L = 0.0; y1L = 0.0; y2L = 0.0
-        x1R = 0.0; x2R = 0.0; y1R = 0.0; y2R = 0.0
+        s1_x1L = 0.0; s1_x2L = 0.0; s1_y1L = 0.0; s1_y2L = 0.0
+        s1_x1R = 0.0; s1_x2R = 0.0; s1_y1R = 0.0; s1_y2R = 0.0
+        s2_x1L = 0.0; s2_x2L = 0.0; s2_y1L = 0.0; s2_y2L = 0.0
+        s2_x1R = 0.0; s2_x2R = 0.0; s2_y1R = 0.0; s2_y2R = 0.0
     }
 
     companion object {

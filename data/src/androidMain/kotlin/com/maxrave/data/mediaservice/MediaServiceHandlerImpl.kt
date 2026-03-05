@@ -396,6 +396,7 @@ internal class MediaServiceHandlerImpl(
         getDataOfNowPlayingTrackStateJob =
             coroutineScope.launch {
                 Logger.w(TAG, "getDataOfNowPlayingState: $videoId")
+                Logger.w(TAG, "getDataOfNowPlayingState: ${track?.thumbnails}")
                 songRepository.getSongById(videoId).cancellable().singleOrNull().let { songEntity ->
                     if (songEntity != null) {
                         _controlState.update { it.copy(isLiked = songEntity.liked) }
@@ -403,9 +404,9 @@ internal class MediaServiceHandlerImpl(
                             track?.thumbnails?.lastOrNull()?.url
                                 ?: songEntity.thumbnails
                                 ?: "http://i.ytimg.com/vi/${songEntity.videoId}/maxresdefault.jpg"
-                        if (thumbUrl.contains("w120")) {
-                            thumbUrl = Regex("([wh])120").replace(thumbUrl, "$1544")
-                        }
+                        Logger.w(TAG, "getDataOfNowPlayingState before: $thumbUrl")
+                        thumbUrl = Regex("([=-][wh])\\d+").replace(thumbUrl, "$1544")
+                        Logger.w(TAG, "getDataOfNowPlayingState: $thumbUrl")
                         if (songEntity.thumbnails != thumbUrl) {
                             songRepository.updateThumbnailsSongEntity(thumbUrl, songEntity.videoId).singleOrNull()?.let {
                                 Logger.w(TAG, "getDataOfNowPlayingState: Updated thumbs $it")
@@ -415,24 +416,43 @@ internal class MediaServiceHandlerImpl(
                             Logger.w(TAG, "getDataOfNowPlayingState: $it")
                         }
                         songRepository.updateListenCount(songEntity.videoId)
+                        Logger.w(TAG, "getDataOfNowPlayingState: $songEntity")
+                        Logger.w(TAG, "getDataOfNowPlayingState: $track")
+                        _nowPlayingState.update {
+                            it.copy(
+                                songEntity =
+                                    songEntity.copy(
+                                        thumbnails = thumbUrl,
+                                    ),
+                            )
+                        }
+                        updateDiscordRpc(songEntity)
                     } else {
                         _controlState.update { it.copy(isLiked = false) }
+                        var thumbUrl =
+                            track?.thumbnails?.lastOrNull()?.url
+                                ?: "http://i.ytimg.com/vi/${track?.videoId}/maxresdefault.jpg"
+                        Logger.w(TAG, "getDataOfNowPlayingState before: $thumbUrl")
+                        thumbUrl = Regex("([=-][wh])\\d+").replace(thumbUrl, "$1544")
+                        val songEntity =
+                            (track?.toSongEntity() ?: mediaItem.toSongEntity()).copy(
+                                thumbnails = thumbUrl,
+                            )
                         songRepository
                             .insertSong(
-                                track?.toSongEntity() ?: mediaItem.toSongEntity(),
+                                songEntity,
                             ).singleOrNull()
                             ?.let {
                                 Logger.w(TAG, "getDataOfNowPlayingState: $it")
                             }
+                        Logger.w(TAG, "getDataOfNowPlayingState: $songEntity")
+                        _nowPlayingState.update {
+                            it.copy(
+                                songEntity = songEntity,
+                            )
+                        }
+                        updateDiscordRpc(songEntity)
                     }
-                    Logger.w(TAG, "getDataOfNowPlayingState: $songEntity")
-                    Logger.w(TAG, "getDataOfNowPlayingState: $track")
-                    _nowPlayingState.update {
-                        it.copy(
-                            songEntity = songEntity ?: track?.toSongEntity() ?: mediaItem.toSongEntity(),
-                        )
-                    }
-                    updateDiscordRpc(songEntity ?: track?.toSongEntity() ?: mediaItem.toSongEntity())
                     Logger.w(TAG, "getDataOfNowPlayingState: ${nowPlayingState.value}")
                 }
                 songEntityJob?.cancel()
@@ -1415,9 +1435,7 @@ internal class MediaServiceHandlerImpl(
             var thumbUrl =
                 track.thumbnails?.lastOrNull()?.url
                     ?: "http://i.ytimg.com/vi/${track.videoId}/maxresdefault.jpg"
-            if (thumbUrl.contains("w120")) {
-                thumbUrl = Regex("([wh])120").replace(thumbUrl, "$1544")
-            }
+            thumbUrl = Regex("([=-][wh])\\d+").replace(thumbUrl, "$1544")
             val artistName: String = track.artists.toListName().connectArtists()
             val isSong =
                 (
@@ -1555,9 +1573,7 @@ internal class MediaServiceHandlerImpl(
                 var thumbUrl =
                     track.thumbnails?.lastOrNull()?.url
                         ?: "http://i.ytimg.com/vi/${track.videoId}/maxresdefault.jpg"
-                if (thumbUrl.contains("w120")) {
-                    thumbUrl = Regex("([wh])120").replace(thumbUrl, "$1544")
-                }
+                thumbUrl = Regex("([=-][wh])\\d+").replace(thumbUrl, "$1544")
                 val isSong =
                     (
                         track.thumbnails?.lastOrNull()?.height != 0 &&
@@ -1781,9 +1797,7 @@ internal class MediaServiceHandlerImpl(
         var thumbUrl =
             track.thumbnails?.lastOrNull()?.url
                 ?: "http://i.ytimg.com/vi/${track.videoId}/maxresdefault.jpg"
-        if (thumbUrl.contains("w120")) {
-            thumbUrl = Regex("([wh])120").replace(thumbUrl, "$1544")
-        }
+        thumbUrl = Regex("([=-][wh])\\d+").replace(thumbUrl, "$1544")
         val artistName: String = track.artists.toListName().connectArtists()
         val isSong =
             (
