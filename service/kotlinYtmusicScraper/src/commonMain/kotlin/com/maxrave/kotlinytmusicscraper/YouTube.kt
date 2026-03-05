@@ -1457,28 +1457,7 @@ class YouTube {
                             }
 
                     val response =
-                        if (noLogIn) {
-                            var count = 0
-                            var testUrl = ""
-                            var res: PlayerResponse? = null
-                            while (count < 3) {
-                                val resp = newPipePlayer(videoId, tempRes)
-                                testUrl = res
-                                    ?.streamingData
-                                    ?.adaptiveFormats
-                                    ?.firstOrNull()
-                                    ?.url ?: ""
-                                val is403 = is403Url(testUrl)
-                                if (!is403) {
-                                    res = resp
-                                    break
-                                }
-                                count++
-                            }
-                            res
-                        } else {
-                            smartTubePlayer(videoId, tempRes) ?: newPipePlayer(videoId, tempRes)
-                        }
+                        smartTubePlayer(videoId, tempRes) ?: newPipePlayer(videoId, tempRes)
                     if (response != null) {
                         decodedSigResponse = response
                         currentClient = client
@@ -2081,10 +2060,11 @@ class YouTube {
     ) = runCatching {
         val searchRes = ytMusic.searchTidalId(url, query).body<TidalSearchResponse>()
         val firstRes = searchRes.data?.items?.firstOrNull { it?.duration?.let { dur -> abs(dur - durationSeconds) <= 1 } ?: false }
-        val matchedItem = firstRes ?: searchRes.data
-            ?.items
-            ?.filter { it?.duration?.let { dur -> abs(dur - durationSeconds) <= 1 } ?: false }
-            ?.minByOrNull { abs((it?.duration ?: 0) - durationSeconds) }
+        val matchedItem =
+            firstRes ?: searchRes.data
+                ?.items
+                ?.filter { it?.duration?.let { dur -> abs(dur - durationSeconds) <= 1 } ?: false }
+                ?.minByOrNull { abs((it?.duration ?: 0) - durationSeconds) }
         val trackId = matchedItem?.id ?: throw Exception("No matching track found")
         val streamRes = ytMusic.getTidalStream(url, "$trackId").body<TidalStreamResponse>()
         TidalStreamResult(
@@ -2178,7 +2158,12 @@ class YouTube {
                                             Logger.e("Stream", "Tidal error: ${it.message}", it)
                                         }
                                     }.getOrNull()
-                            val audioData = res?.stream?.data?.manifest?.decodeTidalManifest()
+                            val audioData =
+                                res
+                                    ?.stream
+                                    ?.data
+                                    ?.manifest
+                                    ?.decodeTidalManifest()
                             if (audioData != null) {
                                 Logger.d("Stream", "Found potential 320kbps stream from Tidal: $res")
                                 audioData.urls.firstOrNull() ?: audioFormat?.url
