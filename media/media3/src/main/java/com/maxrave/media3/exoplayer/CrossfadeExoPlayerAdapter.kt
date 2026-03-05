@@ -1651,18 +1651,16 @@ internal class CrossfadeExoPlayerAdapter(
                         nextPlayer.volume = fadeInVolume
 
                         // DJ-style filter sweep (alongside volume)
-                        // Smoothstep (S-curve): filters hold at both ends, sweep aggressively
-                        // in the middle — creates a distinct "transition point" like a DJ
-                        // turning both filter knobs simultaneously
+                        // Pure exponential (log-linear) interpolation on frequency —
+                        // matches human hearing perception (logarithmic) for a natural sweep
                         if (useDjFilter) {
-                            val smoothProgress = progress * progress * (3f - 2f * progress)
                             // Outgoing: LPF sweeps 20kHz → 200Hz
                             currentPlayerFilter?.cutoffFrequencyHz =
-                                exponentialInterpolate(LPF_START_HZ, LPF_END_HZ, smoothProgress)
+                                exponentialInterpolate(LPF_START_HZ, LPF_END_HZ, progress)
 
                             // Incoming: HPF sweeps 8kHz → 20Hz
                             secondaryPlayerFilter?.cutoffFrequencyHz =
-                                exponentialInterpolate(HPF_START_HZ, HPF_END_HZ, smoothProgress)
+                                exponentialInterpolate(HPF_START_HZ, HPF_END_HZ, progress)
                         }
 
                         // AutoMix: crossfade BPM speed and key pitch on BOTH players
@@ -2026,7 +2024,7 @@ internal class CrossfadeExoPlayerAdapter(
         // DJ crossfade filter frequency bounds
         private const val LPF_START_HZ = 20000f // Low-pass starts wide open
         private const val LPF_END_HZ = 200f // Low-pass ends muffled (keeps bass thump like Pioneer DJM)
-        private const val HPF_START_HZ = 8000f // High-pass starts cutting mid-highs (4th order = steep rolloff)
+        private const val HPF_START_HZ = 2000f // High-pass starts lower — incoming track fills in faster
         private const val HPF_END_HZ = 20f // High-pass ends wide open
 
         // AutoMix constants (targeting ~25s like Apple Music Automix)
