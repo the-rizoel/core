@@ -241,8 +241,6 @@ class Ytmusic {
             "SAPISIDHASH ${currentTime}_$sapisidHash"
         }
 
-    fun getSmartTubePlayer(videoId: String): List<Pair<Int, String>> = extractor.smartTubePlayer(videoId)
-
     fun getNewPipePlayer(videoId: String): List<Pair<Int, String>> = extractor.newPipePlayer(videoId)
 
     fun mergeAudioVideoDownload(filePath: String): DownloadProgress = extractor.mergeAudioVideoDownload(filePath)

@@ -13,7 +13,5 @@ expect class Extractor() {
         track: SongItem,
     ): DownloadProgress
 
-    fun smartTubePlayer(videoId: String): List<Pair<Int, String>>
-
     fun newPipePlayer(videoId: String): List<Pair<Int, String>>
 }

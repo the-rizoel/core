@@ -1157,88 +1157,6 @@ class YouTube {
         }
     }
 
-    private suspend fun smartTubePlayer(
-        videoId: String,
-        tempRes: PlayerResponse,
-    ): PlayerResponse? {
-        val listUrlSig = mutableListOf<String>()
-        var decodedSigResponse: PlayerResponse?
-        var sigResponse: PlayerResponse?
-        listUrlSig.removeAll(listUrlSig)
-        Logger.d(TAG, "YouTube TempRes ${tempRes.playabilityStatus}")
-        if (tempRes.playabilityStatus.status != "OK") {
-            return null
-        } else {
-            sigResponse = tempRes
-        }
-        val streamsList = ytMusic.getSmartTubePlayer(videoId)
-        streamsList.forEach {
-            Logger.d(TAG, "YouTube SmartTube Audio Stream ${it.first} ${it.second}")
-        }
-
-        if (streamsList.isEmpty()) return null
-
-        decodedSigResponse =
-            sigResponse.copy(
-                streamingData =
-                    sigResponse.streamingData?.copy(
-                        formats =
-                            sigResponse.streamingData.formats?.map { format ->
-                                format.copy(
-                                    url = streamsList.find { it.first == format.itag }?.second,
-                                )
-                            },
-                        adaptiveFormats =
-                            sigResponse.streamingData.adaptiveFormats.map { adaptiveFormats ->
-                                adaptiveFormats.copy(
-                                    url = streamsList.find { it.first == adaptiveFormats.itag }?.second,
-                                )
-                            },
-                    ),
-            )
-        listUrlSig.addAll(
-            (
-                decodedSigResponse
-                    .streamingData
-                    ?.adaptiveFormats
-                    ?.mapNotNull { it.url }
-                    ?.toMutableList() ?: mutableListOf()
-            ).apply {
-                decodedSigResponse
-                    .streamingData
-                    ?.formats
-                    ?.mapNotNull { it.url }
-                    ?.let { addAll(it) }
-            },
-        )
-        Logger.d(TAG, "YouTube URL ${decodedSigResponse.streamingData?.formats?.mapNotNull { it.url }}")
-        val listFormat =
-            (
-                decodedSigResponse
-                    .streamingData
-                    ?.formats
-                    ?.map { Pair(it.itag, it.url) }
-                    ?.toMutableList() ?: mutableListOf()
-            ).apply {
-                addAll(
-                    decodedSigResponse.streamingData?.adaptiveFormats?.map {
-                        Pair(it.itag, it.url)
-                    } ?: emptyList(),
-                )
-            }
-        listFormat.forEach {
-            Logger.d(TAG, "YouTube Format ${it.first} ${it.second}")
-        }
-        val randomUrl = listUrlSig.randomOrNull() ?: return null
-        if (listUrlSig.isNotEmpty() && !is403Url(randomUrl)) {
-            Logger.d(TAG, "YouTube SmartTube Found URL $randomUrl")
-            return decodedSigResponse
-        } else {
-            Logger.d(TAG, "YouTube SmartTube No URL Found")
-            return null
-        }
-    }
-
     suspend fun newPipePlayer(
         videoId: String,
         tempRes: PlayerResponse,
@@ -1456,8 +1374,7 @@ class YouTube {
                                 )
                             }
 
-                    val response =
-                        smartTubePlayer(videoId, tempRes) ?: newPipePlayer(videoId, tempRes)
+                    val response = newPipePlayer(videoId, tempRes)
                     if (response != null) {
                         decodedSigResponse = response
                         currentClient = client

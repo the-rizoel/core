@@ -2,48 +2,22 @@ package com.maxrave.kotlinytmusicscraper.extractor
 
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
-import com.liskovsoft.sharedutils.prefs.GlobalPreferences
-import com.liskovsoft.youtubeapi.app.AppService
-import com.liskovsoft.youtubeapi.videoinfo.V2.VideoInfoService
 import com.maxrave.kotlinytmusicscraper.models.SongItem
 import com.maxrave.kotlinytmusicscraper.models.response.DownloadProgress
 import com.maxrave.logger.Logger
 import okio.FileSystem
 import okio.IOException
 import okio.Path.Companion.toPath
-import org.koin.mp.KoinPlatform.getKoin
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.stream.StreamInfo
 
 private const val TAG = "Extractor"
 
 actual class Extractor {
-    private val mAppService = AppService.instance()
-    private val mVideoInfoService = VideoInfoService.instance()
     private var newPipeDownloader = NewPipeDownloaderImpl(proxy = null)
 
     actual fun init() {
         NewPipe.init(newPipeDownloader)
-    }
-
-    actual fun smartTubePlayer(videoId: String): List<Pair<Int, String>> {
-        try {
-            if (GlobalPreferences.sInstance == null) {
-                GlobalPreferences.instance(getKoin().get())
-            }
-            mAppService.resetClientPlaybackNonce()
-            mAppService.refreshCacheIfNeeded()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        val videoInfo = mVideoInfoService.getVideoInfo(videoId, "")
-        val streamsList =
-            (videoInfo?.adaptiveFormats ?: emptyList()) +
-                (videoInfo?.regularFormats ?: emptyList()) +
-                (videoInfo?.restrictedFormats ?: emptyList())
-        return streamsList.mapNotNull {
-            it.iTag to it.url
-        }
     }
 
     actual fun newPipePlayer(videoId: String): List<Pair<Int, String>> {

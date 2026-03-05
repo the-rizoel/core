@@ -12,8 +12,6 @@ actual class Extractor {
         NewPipe.init(newPipeDownloader)
     }
 
-    actual fun smartTubePlayer(videoId: String): List<Pair<Int, String>> = emptyList()
-
     actual fun newPipePlayer(videoId: String): List<Pair<Int, String>> {
         val streamInfo = StreamInfo.getInfo(NewPipe.getService(0), "https://www.youtube.com/watch?v=$videoId")
         val streamsList = streamInfo.audioStreams + streamInfo.videoStreams + streamInfo.videoOnlyStreams
