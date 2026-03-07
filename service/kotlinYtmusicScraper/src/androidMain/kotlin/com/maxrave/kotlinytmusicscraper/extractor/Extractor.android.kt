@@ -76,7 +76,7 @@ actual class Extractor {
             } catch (e: IOException) {
                 e.printStackTrace()
             }
-            return (DownloadProgress.failed(session.failStackTrace))
+            return (DownloadProgress.failed(session.failStackTrace ?: "Command cancelled"))
         } else {
             // FAILURE
             Logger.d(TAG, "Command failed ${session.state}, ${session.returnCode}, ${session.failStackTrace}")
@@ -87,7 +87,7 @@ actual class Extractor {
             } catch (e: IOException) {
                 e.printStackTrace()
             }
-            return (DownloadProgress.failed(session.failStackTrace))
+            return (DownloadProgress.failed(session.failStackTrace ?: "FFmpeg command failed"))
         }
     }
 

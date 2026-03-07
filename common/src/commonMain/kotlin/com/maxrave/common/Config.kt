@@ -229,7 +229,7 @@ object SUPPORTED_LANGUAGE {
             return "en-US"
         }
         Logger.w("Config", "getCodeFromLanguage: ${codes.getOrNull(index)}")
-        return (codes.getOrNull(index) ?: "en-US").toString()
+        return (codes.getOrNull(index) ?: "en-US")
     }
 }
 

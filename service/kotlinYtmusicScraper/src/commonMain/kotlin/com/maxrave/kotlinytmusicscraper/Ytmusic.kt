@@ -904,7 +904,7 @@ class Ytmusic {
     ) {
         val fileSystem = FileSystem.SYSTEM
         val chunkSize = fileSize / parallelDownloads
-        val tempDir = path.parent?.let { it / "temp_chunks" } ?: throw IllegalArgumentException("Path has no parent")
+        val tempDir = path.parent?.let { it / "temp_chunks_${path.name}" } ?: throw IllegalArgumentException("Path has no parent")
 
         try {
             // Create temp directory
@@ -937,6 +937,9 @@ class Ytmusic {
                                         header("Accept", "*/*")
                                         header("Range", "bytes=$startByte-$endByte")
                                     }.execute { res ->
+                                        if (res.status.value != 206) {
+                                            throw IllegalStateException("Server returned ${res.status.value} instead of 206 for Range request")
+                                        }
                                         val channel = res.bodyAsChannel()
                                         fileSystem.sink(tempFiles[index]).buffer().use { sink ->
                                             while (!channel.isClosedForRead) {
