@@ -189,8 +189,6 @@ class YouTube {
             .findLast { it.contains("\"") }
             ?.replace("\"", "")
 
-    private var poTokenObject: Pair<String?, Long> = Pair(null, 0)
-
     /**
      * Remove proxy for client
      */
@@ -1278,205 +1276,102 @@ class YouTube {
                             ),
                         ]
                     }.joinToString("")
-            val listClients = listOf(WEB_REMIX, TVHTML5)
 
             var decodedSigResponse: PlayerResponse? = null
-            var currentClient: YouTubeClient
-            val now = Clock.System.now().epochSeconds
-            if (now < poTokenObject.second) {
-                Logger.d(TAG, "Use saved PoToken")
-                poTokenObject.first
-            } else {
+            val tempRes =
                 ytMusic
-                    .createPoTokenChallenge()
-                    .bodyAsText()
-                    .let { challenge ->
-                        val listChallenge = poTokenJsonDeserializer.decodeFromString<List<String?>>(challenge)
-                        listChallenge.filterNotNull().firstOrNull()
-                    }?.let { poTokenChallenge ->
-                        ytMusic.generatePoToken(poTokenChallenge).bodyAsText().getPoToken().also { poToken ->
-                            if (poToken != null) {
-                                poTokenObject = Pair(poToken, now + 3600)
-                            }
-                        }
-                    }
-            }
-            if (!noLogIn) {
-                for (client in listClients) {
-                    val tempRes =
-                        ytMusic
-                            .player(
-                                WEB_REMIX,
-                                videoId,
-                                playlistId,
-                                cpn,
-                                signatureTimestamp =
-                                    run {
-                                        val today = Clock.System.todayIn(TimeZone.UTC)
-                                        val epoch =
-                                            Instant
-                                                .fromEpochSeconds(0)
-                                                .toLocalDateTime(TimeZone.UTC)
-                                                .date
-                                        epoch.daysUntil(today)
-                                    },
-                            ).body<PlayerResponse>()
-                            .let {
-                                val fexp =
-                                    it.streamingData
-                                        ?.serverAbrStreamingUrl
-                                        ?.toKmpUri()
-                                        ?.getQueryParameter("fexp")
-                                val playbackTracking = it.playbackTracking
-                                it.copy(
-                                    playbackTracking =
-                                        playbackTracking?.copy(
-                                            atrUrl =
-                                                playbackTracking.atrUrl?.copy(
-                                                    baseUrl =
-                                                        playbackTracking.atrUrl.baseUrl
-                                                            ?.toKmpUri()
-                                                            ?.buildUpon()
-                                                            ?.apply {
-                                                                if (fexp != null) {
-                                                                    appendQueryParameter("fexp", fexp)
-                                                                }
-                                                            }?.build()
-                                                            ?.toString(),
-                                                ),
-                                            videostatsPlaybackUrl =
-                                                playbackTracking.videostatsPlaybackUrl?.copy(
-                                                    baseUrl =
-                                                        playbackTracking.videostatsPlaybackUrl.baseUrl
-                                                            ?.toKmpUri()
-                                                            ?.buildUpon()
-                                                            ?.apply {
-                                                                if (fexp != null) {
-                                                                    appendQueryParameter("fexp", fexp)
-                                                                }
-                                                            }?.build()
-                                                            ?.toString(),
-                                                ),
-                                            videostatsWatchtimeUrl =
-                                                playbackTracking.videostatsWatchtimeUrl?.copy(
-                                                    baseUrl =
-                                                        playbackTracking.videostatsWatchtimeUrl.baseUrl
-                                                            ?.toKmpUri()
-                                                            ?.buildUpon()
-                                                            ?.apply {
-                                                                if (fexp != null) {
-                                                                    appendQueryParameter("fexp", fexp)
-                                                                }
-                                                            }?.build()
-                                                            ?.toString(),
-                                                ),
-                                        ),
-                                )
-                            }
-
-                    val response = newPipePlayer(videoId, tempRes)
-                    if (response != null) {
-                        decodedSigResponse = response
-                        currentClient = client
-                        Logger.d(TAG, "YouTube Player found URL with client ${currentClient.clientName}")
-                        break
-                    } else {
-                        Logger.d(TAG, "YouTube Player no URL found with client ${client.clientName}")
-                    }
-                }
-            } else {
-                decodedSigResponse = null
-            }
-            if (decodedSigResponse == null) {
-                val (tempCookie, visitorData, playbackTracking) = getVisitorData(videoId, playlistId)
-                val poToken = poTokenObject.first
-                Logger.d(TAG, "PoToken $poToken")
-                val playerResponse = ytMusic.noLogInPlayer(videoId, tempCookie, visitorData, poToken ?: "").body<PlayerResponse>()
-                Logger.d(TAG, "Player Response $playerResponse")
-                Logger.d(TAG, "Thumbnails " + playerResponse.videoDetails?.thumbnail)
-                Logger.d(TAG, "Player Response status: ${playerResponse.playabilityStatus.status}")
-                val firstThumb =
-                    playerResponse.videoDetails
-                        ?.thumbnail
-                        ?.thumbnails
-                        ?.firstOrNull()
-                val thumbnails =
-                    if (firstThumb?.height == firstThumb?.width && firstThumb != null) MediaType.Song else MediaType.Video
-                val formatList = playerResponse.streamingData?.formats?.map { Pair(it.itag, it.isAudio) }
-                Logger.d(TAG, "Player Response formatList $formatList")
-                val adaptiveFormatsList = playerResponse.streamingData?.adaptiveFormats?.map { Pair(it.itag, it.isAudio) }
-                Logger.d(TAG, "Player Response adaptiveFormat $adaptiveFormatsList")
-                val randomUrl = playerResponse.streamingData?.hlsManifestUrl
-                playerResponse.streamingData
-                    ?.formats
-                    ?.randomOrNull()
-                    ?.url
-                    ?: playerResponse.streamingData
-                        ?.adaptiveFormats
-                        ?.randomOrNull()
-                        ?.url
-                Logger.d(TAG, "Player Response randomUrl $randomUrl")
-
-                if (playerResponse.playabilityStatus.status == "OK" &&
-                    (formatList != null || adaptiveFormatsList != null) &&
-                    randomUrl != null &&
-                    !is403Url(randomUrl)
-                ) {
-                    return@runCatching Triple(
+                    .player(
+                        WEB_REMIX,
+                        videoId,
+                        playlistId,
                         cpn,
-                        playerResponse.copy(
-                            videoDetails = playerResponse.videoDetails?.copy(),
-                            playbackTracking = playbackTracking ?: playerResponse.playbackTracking,
-                        ),
-                        thumbnails,
-                    )
-                } else {
-                    Logger.d(TAG, "Player Response is not OK or formatList is null or randomUrl is null")
-                    for (instance in listPipedInstances) {
-                        try {
-                            val piped = ytMusic.pipedStreams(videoId, instance).body<PipedResponse>()
-                            val audioStreams = piped.audioStreams
-                            val videoStreams = piped.videoStreams
-                            val stream = audioStreams + videoStreams
-                            return@runCatching Triple(
-                                null,
-                                playerResponse.copy(
-                                    streamingData =
-                                        PlayerResponse.StreamingData(
-                                            formats = stream.toListFormat(),
-                                            adaptiveFormats = stream.toListFormat(),
-                                            expiresInSeconds = 0,
-                                            hlsManifestUrl = piped.dash ?: piped.hls,
+                        signatureTimestamp =
+                            run {
+                                val today = Clock.System.todayIn(TimeZone.UTC)
+                                val epoch =
+                                    Instant
+                                        .fromEpochSeconds(0)
+                                        .toLocalDateTime(TimeZone.UTC)
+                                        .date
+                                epoch.daysUntil(today)
+                            },
+                    ).body<PlayerResponse>()
+                    .let {
+                        val fexp =
+                            it.streamingData
+                                ?.serverAbrStreamingUrl
+                                ?.toKmpUri()
+                                ?.getQueryParameter("fexp")
+                        val playbackTracking = it.playbackTracking
+                        it.copy(
+                            playbackTracking =
+                                playbackTracking?.copy(
+                                    atrUrl =
+                                        playbackTracking.atrUrl?.copy(
+                                            baseUrl =
+                                                playbackTracking.atrUrl.baseUrl
+                                                    ?.toKmpUri()
+                                                    ?.buildUpon()
+                                                    ?.apply {
+                                                        if (fexp != null) {
+                                                            appendQueryParameter("fexp", fexp)
+                                                        }
+                                                    }?.build()
+                                                    ?.toString(),
                                         ),
-                                    videoDetails = playerResponse.videoDetails?.copy(),
-                                    playbackTracking = playbackTracking ?: playerResponse.playbackTracking,
+                                    videostatsPlaybackUrl =
+                                        playbackTracking.videostatsPlaybackUrl?.copy(
+                                            baseUrl =
+                                                playbackTracking.videostatsPlaybackUrl.baseUrl
+                                                    ?.toKmpUri()
+                                                    ?.buildUpon()
+                                                    ?.apply {
+                                                        if (fexp != null) {
+                                                            appendQueryParameter("fexp", fexp)
+                                                        }
+                                                    }?.build()
+                                                    ?.toString(),
+                                        ),
+                                    videostatsWatchtimeUrl =
+                                        playbackTracking.videostatsWatchtimeUrl?.copy(
+                                            baseUrl =
+                                                playbackTracking.videostatsWatchtimeUrl.baseUrl
+                                                    ?.toKmpUri()
+                                                    ?.buildUpon()
+                                                    ?.apply {
+                                                        if (fexp != null) {
+                                                            appendQueryParameter("fexp", fexp)
+                                                        }
+                                                    }?.build()
+                                                    ?.toString(),
+                                        ),
                                 ),
-                                thumbnails,
-                            )
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            continue
-                        }
+                        )
                     }
-                }
-                throw Exception(playerResponse.playabilityStatus.status)
+
+            val response = newPipePlayer(videoId, tempRes)
+            if (response != null) {
+                decodedSigResponse = response
+                Logger.d(TAG, "YouTube Player found URL")
             } else {
-                val firstThumb =
-                    decodedSigResponse.videoDetails
-                        ?.thumbnail
-                        ?.thumbnails
-                        ?.firstOrNull()
-                val thumbnails =
-                    if (firstThumb?.height == firstThumb?.width && firstThumb != null) MediaType.Song else MediaType.Video
-                return@runCatching Triple(
-                    cpn,
-                    decodedSigResponse.copy(
-                        videoDetails = decodedSigResponse.videoDetails?.copy(),
-                        playbackTracking = decodedSigResponse.playbackTracking,
-                    ),
-                    thumbnails,
-                )
+                Logger.d(TAG, "YouTube Player no URL found")
             }
+            if (decodedSigResponse == null) throw RuntimeException("No URL found")
+            val firstThumb =
+                decodedSigResponse.videoDetails
+                    ?.thumbnail
+                    ?.thumbnails
+                    ?.firstOrNull()
+            val thumbnails =
+                if (firstThumb?.height == firstThumb?.width && firstThumb != null) MediaType.Song else MediaType.Video
+            return@runCatching Triple(
+                cpn,
+                decodedSigResponse.copy(
+                    videoDetails = decodedSigResponse.videoDetails?.copy(),
+                    playbackTracking = decodedSigResponse.playbackTracking,
+                ),
+                thumbnails,
+            )
         }
 
     suspend fun updateWatchTime(

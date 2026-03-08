@@ -2432,8 +2432,13 @@ class JvmMediaPlayerHandlerImpl(
     }
 
     override fun onIsLoadingChanged(isLoading: Boolean) {
+        Logger.d(TAG, "onIsLoadingChanged: $isLoading")
         _simpleMediaState.value =
             SimpleMediaState.Loading(player.bufferedPercentage, player.duration)
+        Logger.d(TAG, "onIsLoadingChanged: bufferedPercentage: ${player.bufferedPercentage}, duration: ${player.duration}")
+        if (player.bufferedPercentage * player.duration > player.currentPosition) {
+            _simpleMediaState.value = SimpleMediaState.Ready(player.duration)
+        }
         if (isLoading) {
             startBufferedUpdate()
         } else {

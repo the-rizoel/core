@@ -1,6 +1,5 @@
 plugins {
     id("java-library")
-    alias(libs.plugins.osdetector)
     alias(libs.plugins.jetbrains.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -21,12 +20,7 @@ kotlin {
         implementation(libs.kotlinx.serialization.json)
         implementation(libs.kotlinx.coroutinesSwing)
 
-        // Gstreamer
-        implementation(libs.gst1.java.core)
-        implementation(libs.gst1.java.fx)
-        implementation(libs.gst1.java.swing)
-
-        implementation(libs.jna)
-        implementation(libs.jna.platform)
+        // VLC
+        implementation(libs.vlcj)
     }
 }
