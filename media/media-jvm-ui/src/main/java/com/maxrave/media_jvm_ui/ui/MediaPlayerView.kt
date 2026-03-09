@@ -81,8 +81,11 @@ fun MediaPlayerViewWithUrl(
 
             player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
                 override fun finished(mediaPlayer: MediaPlayer) {
-                    mediaPlayer.controls().setTime(0)
-                    mediaPlayer.controls().play()
+                    // VLCJ deadlocks if you call player methods from the event callback thread.
+                    // Dispatch replay onto the Swing EDT to avoid the deadlock.
+                    scope.launch(Dispatchers.Swing) {
+                        mediaPlayer.media().play(url)
+                    }
                 }
             })
 

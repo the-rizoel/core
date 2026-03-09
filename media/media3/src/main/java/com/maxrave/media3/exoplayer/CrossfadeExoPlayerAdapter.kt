@@ -1563,12 +1563,10 @@ internal class CrossfadeExoPlayerAdapter(
                 val bpmSpeedRatio = if (isAutoMode) calculateBpmSpeedRatio(currentVideoId, nextVideoId) else 1.0f
                 val keyPitchRatio = if (isAutoMode) calculateKeyPitchRatio(currentVideoId, nextVideoId) else 1.0f
 
-                // Apply initial AutoMix playback parameters to incoming track (quantized)
+                // Incoming player plays at natural speed/pitch — only the outgoing
+                // player is adjusted to match the incoming track during crossfade.
                 nextPlayer.playbackParameters =
-                    PlaybackParameters(
-                        quantize(bpmSpeedRatio * internalPlaybackSpeed),
-                        quantize(keyPitchRatio * internalPlaybackPitch),
-                    )
+                    PlaybackParameters(internalPlaybackSpeed, internalPlaybackPitch)
 
                 // Update now playing IMMEDIATELY (store from-index for cancel scenarios)
                 crossfadeFromIndex = localCurrentMediaItemIndex
@@ -1679,8 +1677,6 @@ internal class CrossfadeExoPlayerAdapter(
         }
 
         // Track last quantized speed/pitch to avoid redundant PlaybackParameters updates
-        var lastIncomingSpeed = -1f
-        var lastIncomingPitch = -1f
         var lastOutgoingSpeed = -1f
         var lastOutgoingPitch = -1f
 
@@ -1714,30 +1710,15 @@ internal class CrossfadeExoPlayerAdapter(
                                 exponentialInterpolate(HPF_START_HZ, HPF_END_HZ, progress)
                         }
 
-                        // AutoMix: crossfade BPM speed and key pitch on BOTH players
-                        // Outgoing: ramp from natural (1.0) → inverse ratio
-                        // Incoming: ramp from matched ratio → natural (1.0)
+                        // AutoMix: only adjust the OUTGOING (previous) player to match
+                        // the incoming track. The incoming player stays at natural speed/pitch.
+                        // Outgoing: ramp from natural (1.0) → targetRatio
                         // Quantize to SPEED_PITCH_STEP to avoid SonicAudioProcessor
                         // popping from too-frequent micro-adjustments
                         if (useAutoMixRamp) {
-                            // Incoming player: matched → natural
-                            val rawInSpeed = lerp(targetSpeedRatio, 1.0f, progress)
-                            val rawInPitch = lerp(targetPitchRatio, 1.0f, progress)
-                            val qInSpeed = quantize(rawInSpeed * internalPlaybackSpeed)
-                            val qInPitch = quantize(rawInPitch * internalPlaybackPitch)
-
-                            // Only update if quantized value changed (avoids redundant resets)
-                            if (qInSpeed != lastIncomingSpeed || qInPitch != lastIncomingPitch) {
-                                nextPlayer.playbackParameters = PlaybackParameters(qInSpeed, qInPitch)
-                                lastIncomingSpeed = qInSpeed
-                                lastIncomingPitch = qInPitch
-                            }
-
-                            // Outgoing player: natural → inverse ratio
-                            val inverseSpeed = 1.0f / targetSpeedRatio
-                            val inversePitch = 1.0f / targetPitchRatio
-                            val rawOutSpeed = lerp(1.0f, inverseSpeed, progress)
-                            val rawOutPitch = lerp(1.0f, inversePitch, progress)
+                            // Outgoing player: natural → target ratio (match incoming track)
+                            val rawOutSpeed = lerp(1.0f, targetSpeedRatio, progress)
+                            val rawOutPitch = lerp(1.0f, targetPitchRatio, progress)
                             val qOutSpeed = quantize(rawOutSpeed * internalPlaybackSpeed)
                             val qOutPitch = quantize(rawOutPitch * internalPlaybackPitch)
 
