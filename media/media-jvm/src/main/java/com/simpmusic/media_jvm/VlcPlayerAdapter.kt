@@ -82,28 +82,19 @@ class VlcPlayerAdapter(
     private val mediaPlayerFactory: MediaPlayerFactory
 
     init {
-        // Set up bundled VLC search paths BEFORE any vlcj class triggers LibVlc.<clinit>
-        val bundledVlcPath = findBundledVlcPath()
-        if (bundledVlcPath != null) {
-            // vlcj uses "libvlc" / "libvlccore" on Windows, "vlc" / "vlccore" on Linux/Mac
-            val isWindows = System.getProperty("os.name", "").lowercase().contains("win")
-            val libVlcName = if (isWindows) "libvlc" else "vlc"
-            val libVlcCoreName = if (isWindows) "libvlccore" else "vlccore"
-            com.sun.jna.NativeLibrary.addSearchPath(libVlcName, bundledVlcPath)
-            com.sun.jna.NativeLibrary.addSearchPath(libVlcCoreName, bundledVlcPath)
-            // Also set jna.library.path as fallback for JNA native loading
-            val existingPath = System.getProperty("jna.library.path", "")
-            val newPath = if (existingPath.isEmpty()) bundledVlcPath else "$existingPath${File.pathSeparator}$bundledVlcPath"
-            System.setProperty("jna.library.path", newPath)
-            Logger.i(TAG, "Bundled VLC search path set: $bundledVlcPath (lib=$libVlcName)")
-        }
-
-        // Try NativeDiscovery (finds system-installed VLC)
-        val found = NativeDiscovery().discover()
-        if (!found && bundledVlcPath == null) {
+        System
+            .getProperty("compose.application.resources.dir")
+            ?.let { System.setProperty("jna.library.path", it) }
+        // Use custom NativeDiscoveryStrategy to find bundled VLC libraries
+        // DefaultVlcDiscoverer handles Windows/Linux, MacOsVlcDiscoverer handles macOS
+        val discovery =
+            NativeDiscovery(
+                DefaultVlcDiscoverer(),
+                MacOsVlcDiscoverer(),
+            )
+        val found = discovery.discover()
+        if (!found) {
             Logger.e(TAG, "VLC native libraries not found! Please install VLC media player.")
-        } else if (!found) {
-            Logger.i(TAG, "Using bundled VLC from: $bundledVlcPath")
         }
 
         val factoryArgs =
@@ -112,15 +103,9 @@ class VlcPlayerAdapter(
                 "--quiet",
                 "--no-metadata-network-access",
                 "--network-caching=10000",
-                "--http-reconnect",
             )
-        // Point VLC to bundled plugins if available
-        val bundledPluginPath = findBundledVlcPluginsPath()
-        if (bundledPluginPath != null) {
-            factoryArgs.add("--plugin-path=$bundledPluginPath")
-        }
 
-        mediaPlayerFactory = MediaPlayerFactory(*factoryArgs.toTypedArray())
+        mediaPlayerFactory = MediaPlayerFactory(discovery, *factoryArgs.toTypedArray())
 
         // Load crossfade settings
         coroutineScope.launch {
@@ -136,54 +121,6 @@ class VlcPlayerAdapter(
                 Logger.d(TAG, "Crossfade duration: $crossfadeDurationMs ms")
             }
         }
-    }
-
-    /**
-     * Find bundled VLC native libraries path.
-     * vlc-setup plugin copies VLC libs into compose.application.resources.dir
-     */
-    private fun findBundledVlcPath(): String? {
-        // When running via Compose Desktop, resources are available at this system property
-        val resourcesDir = System.getProperty("compose.application.resources.dir")
-        if (resourcesDir != null) {
-            val vlcDir = File(resourcesDir)
-            if (vlcDir.exists() && vlcDir.isDirectory) {
-                // Look for libvlc (Linux/Mac) or libvlc.dll (Windows)
-                val hasVlcLib =
-                    vlcDir.listFiles()?.any {
-                        it.name.startsWith("libvlc") || it.name == "vlc.dll" || it.name == "libvlc.dylib"
-                    } == true
-                if (hasVlcLib) return vlcDir.absolutePath
-
-                // Check subdirectories (vlc-setup may organize by OS)
-                vlcDir.listFiles()?.filter { it.isDirectory }?.forEach { subDir ->
-                    val hasLib =
-                        subDir.listFiles()?.any {
-                            it.name.startsWith("libvlc") || it.name == "vlc.dll" || it.name == "libvlc.dylib"
-                        } == true
-                    if (hasLib) return subDir.absolutePath
-                }
-            }
-        }
-
-        // Fallback: check relative to working directory
-        val osName = System.getProperty("os.name", "").lowercase()
-        val subDir =
-            when {
-                osName.contains("win") -> "windows"
-                osName.contains("mac") -> "macos"
-                else -> "linux"
-            }
-        val fallbackDir = File("vlc-natives/$subDir")
-        if (fallbackDir.exists()) return fallbackDir.absolutePath
-
-        return null
-    }
-
-    private fun findBundledVlcPluginsPath(): String? {
-        val vlcPath = findBundledVlcPath() ?: return null
-        val pluginsDir = File(vlcPath, "plugins")
-        return if (pluginsDir.exists() && pluginsDir.isDirectory) pluginsDir.absolutePath else null
     }
 
     // ========== State Management ==========
@@ -1596,7 +1533,10 @@ class VlcPlayerAdapter(
         val steps = 50
         val delayPerStep = (effectiveDurationMs / steps).coerceAtLeast(20) // min 20ms per step
         val targetVolume = (internalVolume * 100).toInt()
-        Logger.d(TAG, "Crossfade animation: ${effectiveDurationMs}ms, $steps steps, ${delayPerStep}ms/step, internalVolume=$internalVolume, targetVolume=$targetVolume")
+        Logger.d(
+            TAG,
+            "Crossfade animation: ${effectiveDurationMs}ms, $steps steps, ${delayPerStep}ms/step, internalVolume=$internalVolume, targetVolume=$targetVolume",
+        )
 
         crossfadeJob?.cancel()
         crossfadeJob =
@@ -2174,6 +2114,15 @@ class VlcVideoSurfacePanel : JPanel() {
                 return RV32BufferFormat(sourceWidth, sourceHeight)
             }
 
+            override fun newFormatSize(
+                p0: Int,
+                p1: Int,
+                p2: Int,
+                p3: Int,
+            ) {
+                // No-op
+            }
+
             override fun allocatedBuffers(buffers: Array<out ByteBuffer>) {
                 // No-op
             }
@@ -2182,19 +2131,29 @@ class VlcVideoSurfacePanel : JPanel() {
     private val renderCb =
         object : RenderCallback {
             override fun display(
-                mediaPlayer: MediaPlayer?,
-                nativeBuffers: Array<out ByteBuffer>,
-                bufferFormat: BufferFormat?,
+                p0: MediaPlayer,
+                p1: Array<ByteBuffer>,
+                p2: BufferFormat,
+                p3: Int,
+                p4: Int,
             ) {
                 val img = videoImage ?: return
                 try {
                     val rgbArray = (img.raster.dataBuffer as DataBufferInt).data
-                    val intBuffer = nativeBuffers[0].asIntBuffer()
+                    val intBuffer = p1[0].asIntBuffer()
                     intBuffer.get(rgbArray, 0, minOf(rgbArray.size, intBuffer.remaining()))
                     repaint()
                 } catch (_: Exception) {
                     // Buffer size mismatch during format change - skip frame
                 }
+            }
+
+            override fun lock(p0: MediaPlayer?) {
+                // No-op
+            }
+
+            override fun unlock(p0: MediaPlayer?) {
+                // No-op
             }
         }
 
