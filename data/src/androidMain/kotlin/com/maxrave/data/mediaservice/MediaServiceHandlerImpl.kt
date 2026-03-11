@@ -2092,6 +2092,7 @@ internal class MediaServiceHandlerImpl(
                     loadPlaylistOrAlbum(index = index)
                     loadJob?.join()
                     val savedPosition = dataStoreManager.recentPosition.first().toLong()
+                    resetCrossfade()
                     player.seekTo(index, savedPosition)
                 }
             }

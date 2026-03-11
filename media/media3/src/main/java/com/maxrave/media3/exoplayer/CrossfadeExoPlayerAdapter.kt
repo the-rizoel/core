@@ -1234,6 +1234,12 @@ internal class CrossfadeExoPlayerAdapter(
                     // Start position updates
                     startPositionUpdates()
 
+                    // Eagerly load audio metadata for auto crossfade calculations
+                    // so it's available when position updates check the trigger threshold
+                    if (crossfadeEnabled && crossfadeDurationMs == DataStoreManager.CROSSFADE_DURATION_AUTO) {
+                        loadAudioMetaIfNeeded(videoId)
+                    }
+
                     // Trigger precaching
                     triggerPrecachingInternal()
                 } catch (e: Exception) {
@@ -1321,8 +1327,9 @@ internal class CrossfadeExoPlayerAdapter(
                     // ERROR_CODE_PARSING_CONTAINER_MALFORMED (3001) = server returned non-media response (e.g. HTML error page)
                     // ERROR_CODE_IO_BAD_HTTP_STATUS (2004) = HTTP 403/410 from expired URL
                     // ERROR_CODE_IO_NETWORK_CONNECTION_FAILED (2001) = connection refused
-                    val isRetryableSourceError = error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
-                        error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+                    val isRetryableSourceError =
+                        error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
+                            error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
 
                     val currentVideoId = playlist.getOrNull(localCurrentMediaItemIndex)?.mediaId
                     if (isRetryableSourceError && currentVideoId != null) {
@@ -1622,6 +1629,19 @@ internal class CrossfadeExoPlayerAdapter(
     }
 
     /**
+     * S-curve (sigmoid) function for DJ filter crossfade timing.
+     * Keeps both tracks near full spectrum at the start and end,
+     * with a steep transition in the middle — like a real DJ mixer crossfader.
+     *
+     * k controls steepness: higher = sharper transition.
+     * k=12 gives: 0-20% ≈ 0, 30-70% = steep ramp, 80-100% ≈ 1.
+     */
+    private fun sigmoid(
+        t: Float,
+        k: Float = DJ_FILTER_SIGMOID_K,
+    ): Float = 1.0f / (1.0f + exp(-k * (t - 0.5f)))
+
+    /**
      * Exponential interpolation between two values.
      * Frequency perception is logarithmic, so this produces a natural-sounding sweep.
      */
@@ -1700,16 +1720,21 @@ internal class CrossfadeExoPlayerAdapter(
                         nextPlayer.volume = fadeInVolume
 
                         // DJ-style filter sweep (alongside volume)
-                        // Pure exponential (log-linear) interpolation on frequency —
-                        // matches human hearing perception (logarithmic) for a natural sweep
+                        // S-curve (sigmoid) on time axis: holds flat at start/end,
+                        // transitions steeply in the middle — mimics a real DJ mixer
+                        // crossfader where both tracks briefly overlap at full spectrum.
+                        // Exponential interpolation on frequency axis preserves
+                        // logarithmic hearing perception for a natural-sounding sweep.
                         if (useDjFilter) {
+                            val filterProgress = sigmoid(progress)
+
                             // Outgoing: LPF sweeps 20kHz → 200Hz
                             currentPlayerFilter?.cutoffFrequencyHz =
-                                exponentialInterpolate(LPF_START_HZ, LPF_END_HZ, progress)
+                                exponentialInterpolate(LPF_START_HZ, LPF_END_HZ, filterProgress)
 
                             // Incoming: HPF sweeps 8kHz → 20Hz
                             secondaryPlayerFilter?.cutoffFrequencyHz =
-                                exponentialInterpolate(HPF_START_HZ, HPF_END_HZ, progress)
+                                exponentialInterpolate(HPF_START_HZ, HPF_END_HZ, filterProgress)
                         }
 
                         // AutoMix: only adjust the OUTGOING (previous) player to match
@@ -1820,8 +1845,18 @@ internal class CrossfadeExoPlayerAdapter(
      * Prevents SonicAudioProcessor from resetting on micro-adjustments that
      * cause audible popping/clicking artifacts.
      */
-    private fun quantize(value: Float): Float =
-        (Math.round(value / SPEED_PITCH_STEP) * SPEED_PITCH_STEP)
+    private fun quantize(value: Float): Float = (Math.round(value / SPEED_PITCH_STEP) * SPEED_PITCH_STEP)
+
+    /**
+     * Get BPM-adaptive target duration for auto crossfade.
+     * Linear interpolation: BPM 70 → 35s, BPM 170 → 12s.
+     * Slower songs get longer crossfade (like Apple Music AutoMix ~30s average).
+     */
+    private fun getAutoTargetDurationMs(bpm: Int): Double {
+        val clampedBpm = bpm.coerceIn(70, 170)
+        // Linear interpolation: BPM 70 → 30s, BPM 170 → 7s
+        return 30000.0 - (clampedBpm - 70) * 230.0
+    }
 
     /**
      * Resolve the crossfade duration for Auto mode based on BPM data.
@@ -1840,8 +1875,9 @@ internal class CrossfadeExoPlayerAdapter(
         if (bpm <= 0) return AUTO_FALLBACK_DURATION_MS
 
         val beatMs = 60_000.0 / bpm
-        // Choose beat count that produces a duration closest to the target (~8 seconds)
-        val targetMs = AUTO_TARGET_DURATION_MS
+        // BPM-adaptive target: slow songs get longer crossfade, fast songs shorter
+        // Linear interpolation: BPM 70 → 35s, BPM 170 → 12s
+        val targetMs = getAutoTargetDurationMs(bpm)
         val bestBeatCount =
             BEAT_COUNT_OPTIONS.minByOrNull { abs(it * beatMs - targetMs) }
                 ?: DEFAULT_BEAT_COUNT
@@ -1899,7 +1935,10 @@ internal class CrossfadeExoPlayerAdapter(
      * Camelot Wheel position: number (1-12) + type (minor=A, major=B).
      * Standard DJ key compatibility system — adjacent codes are harmonically compatible.
      */
-    private data class CamelotCode(val number: Int, val isMinor: Boolean) {
+    private data class CamelotCode(
+        val number: Int,
+        val isMinor: Boolean,
+    ) {
         override fun toString(): String = "$number${if (isMinor) "A" else "B"}"
     }
 
@@ -1914,7 +1953,10 @@ internal class CrossfadeExoPlayerAdapter(
      *  5A=Cm   5B=Eb    | 11A=F#m 11B=A
      *  6A=Gm   6B=Bb    | 12A=C#m 12B=E
      */
-    private fun keyToCamelot(key: String, keyScale: String?): CamelotCode? {
+    private fun keyToCamelot(
+        key: String,
+        keyScale: String?,
+    ): CamelotCode? {
         val semitone = keyToSemitone(key)
         if (semitone < 0) return null
 
@@ -1922,8 +1964,8 @@ internal class CrossfadeExoPlayerAdapter(
 
         // Camelot number lookup by chromatic semitone (C=0, C#=1, D=2, ... B=11)
         //                                   C  C# D  D# E  F  F# G  G# A  A# B
-        val minorCamelotByPitch = intArrayOf( 5, 12, 7,  2, 9, 4, 11, 6,  1, 8,  3, 10)
-        val majorCamelotByPitch = intArrayOf( 8,  3, 10, 5, 12, 7,  2, 9,  4, 11, 6,  1)
+        val minorCamelotByPitch = intArrayOf(5, 12, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10)
+        val majorCamelotByPitch = intArrayOf(8, 3, 10, 5, 12, 7, 2, 9, 4, 11, 6, 1)
 
         val number = if (isMinor) minorCamelotByPitch[semitone] else majorCamelotByPitch[semitone]
         return CamelotCode(number, isMinor)
@@ -1941,7 +1983,10 @@ internal class CrossfadeExoPlayerAdapter(
      * Near-compatible (distance 2, same type):
      * - +-2 same type (8A->10A): 2 semitones apart (whole tone) — safe to shift
      */
-    private fun camelotDistance(a: CamelotCode, b: CamelotCode): Int {
+    private fun camelotDistance(
+        a: CamelotCode,
+        b: CamelotCode,
+    ): Int {
         val numberDiff = abs(a.number - b.number)
         val circularDist = minOf(numberDiff, 12 - numberDiff)
         val typeDiff = if (a.isMinor != b.isMinor) 1 else 0
@@ -2023,7 +2068,7 @@ internal class CrossfadeExoPlayerAdapter(
             val pitchRatio = exp(ln(2.0) * (-chromDiff.toDouble()) / 12.0).toFloat()
             Logger.d(
                 TAG,
-                "AutoMix Key: whole tone shift ${chromDiff} semitones, ratio=${"%.4f".format(pitchRatio)}",
+                "AutoMix Key: whole tone shift $chromDiff semitones, ratio=${"%.4f".format(pitchRatio)}",
             )
             return pitchRatio
         }
@@ -2055,18 +2100,20 @@ internal class CrossfadeExoPlayerAdapter(
         }
 
     companion object {
+        // DJ crossfade sigmoid steepness (higher = sharper S-curve transition)
+        private const val DJ_FILTER_SIGMOID_K = 12f
+
         // DJ crossfade filter frequency bounds
         private const val LPF_START_HZ = 20000f // Low-pass starts wide open
         private const val LPF_END_HZ = 200f // Low-pass ends muffled (keeps bass thump like Pioneer DJM)
         private const val HPF_START_HZ = 2000f // High-pass starts lower — incoming track fills in faster
         private const val HPF_END_HZ = 20f // High-pass ends wide open
 
-        // AutoMix constants (targeting ~25s like Apple Music Automix)
+        // AutoMix constants
         private const val AUTO_FALLBACK_DURATION_MS = 25000 // Default when no BPM data
-        private const val AUTO_TARGET_DURATION_MS = 25000.0 // Target duration for beat-quantized calculation
         private const val AUTO_MIN_DURATION_MS = 10000
-        private const val AUTO_MAX_DURATION_MS = 35000
-        private val BEAT_COUNT_OPTIONS = intArrayOf(16, 32, 48, 64)
+        private const val AUTO_MAX_DURATION_MS = 40000
+        private val BEAT_COUNT_OPTIONS = intArrayOf(16, 32, 48, 64, 80, 96)
         private const val DEFAULT_BEAT_COUNT = 32
         private const val BPM_RATIO_MIN = 0.5f // Max 50% slower
         private const val BPM_RATIO_MAX = 1.5f // Max 50% faster

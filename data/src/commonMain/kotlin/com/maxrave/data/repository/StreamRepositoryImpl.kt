@@ -257,6 +257,33 @@ internal class StreamRepositoryImpl(
                                     bitrate = 320000,
                                 )
                         }
+                    } else if (!isVideo && durationSecond != null && data.third == MediaType.Song) {
+                        val your320kbpsUrl = dataStoreManager.your320kbpsUrl.first()
+                        val title = response.videoDetails?.title ?: ""
+                        val author = response.videoDetails?.author ?: ""
+                        val q =
+                            "$title $author"
+                                .replace(
+                                    Regex("\\((feat\\.|ft.|cùng với|con|mukana|com|avec|合作音乐人: ) "),
+                                    " ",
+                                ).replace(
+                                    Regex("( và | & | и | e | und |, |和| dan)"),
+                                    " ",
+                                ).replace("  ", " ")
+                                .replace(Regex("([()])"), "")
+                                .replace(".", " ")
+                                .replace("  ", " ")
+                        Logger.d("Stream", "Search Tidal metadata for: $q")
+                        youTube
+                            .searchTidalMetadata(your320kbpsUrl, q, durationSecond)
+                            .onSuccess { metadata ->
+                                Logger.w("Stream", "Tidal metadata: $metadata")
+                                tidalBpm = metadata.bpm
+                                tidalMusicKey = metadata.musicKey
+                                tidalKeyScale = metadata.keyScale
+                            }.onFailure {
+                                Logger.e("Stream", "Tidal metadata error: ${it.message}", it)
+                            }
                     }
                     insertNewFormat(
                         NewFormatEntity(

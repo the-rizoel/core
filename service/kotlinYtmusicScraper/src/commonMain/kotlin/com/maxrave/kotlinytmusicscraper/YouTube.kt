@@ -10,6 +10,8 @@ import com.maxrave.kotlinytmusicscraper.models.ArtistItem
 import com.maxrave.kotlinytmusicscraper.models.BrowseEndpoint
 import com.maxrave.kotlinytmusicscraper.models.GridRenderer
 import com.maxrave.kotlinytmusicscraper.models.MediaType
+import com.maxrave.kotlinytmusicscraper.models.TidalMetadataResult
+import com.maxrave.kotlinytmusicscraper.models.TidalStreamResult
 import com.maxrave.kotlinytmusicscraper.models.MusicCarouselShelfRenderer
 import com.maxrave.kotlinytmusicscraper.models.MusicShelfRenderer
 import com.maxrave.kotlinytmusicscraper.models.MusicTwoRowItemRenderer
@@ -1855,16 +1857,6 @@ class YouTube {
             ytMusic.getSimpMusicChart().body<SimpMusicChartResponse>()
         }
 
-    /**
-     * Result of a Tidal stream search, including stream data and audio analysis metadata.
-     */
-    data class TidalStreamResult(
-        val stream: TidalStreamResponse,
-        val bpm: Int?,
-        val musicKey: String?,
-        val keyScale: String?,
-    )
-
     suspend fun getTidalStream(
         url: String,
         query: String,
@@ -1881,6 +1873,29 @@ class YouTube {
         val streamRes = ytMusic.getTidalStream(url, "$trackId").body<TidalStreamResponse>()
         TidalStreamResult(
             stream = streamRes,
+            bpm = matchedItem.bpm,
+            musicKey = matchedItem.key,
+            keyScale = matchedItem.keyScale,
+        )
+    }
+
+    /**
+     * Search Tidal for metadata only (bpm, key, keyScale) without fetching the stream.
+     */
+    suspend fun searchTidalMetadata(
+        url: String,
+        query: String,
+        durationSeconds: Int,
+    ) = runCatching {
+        val searchRes = ytMusic.searchTidalId(url, query).body<TidalSearchResponse>()
+        val firstRes = searchRes.data?.items?.firstOrNull { it?.duration?.let { dur -> abs(dur - durationSeconds) <= 1 } ?: false }
+        val matchedItem =
+            firstRes ?: searchRes.data
+                ?.items
+                ?.filter { it?.duration?.let { dur -> abs(dur - durationSeconds) <= 1 } ?: false }
+                ?.minByOrNull { abs((it?.duration ?: 0) - durationSeconds) }
+                ?: throw Exception("No matching track found")
+        TidalMetadataResult(
             bpm = matchedItem.bpm,
             musicKey = matchedItem.key,
             keyScale = matchedItem.keyScale,
