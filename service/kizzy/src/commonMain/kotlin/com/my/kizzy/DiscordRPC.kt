@@ -20,7 +20,7 @@ class DiscordRPC(
             largeText = song.albumName,
             smallText = song.artistName?.firstOrNull(),
             buttons = listOf(
-                "Listen on YouTube Music" to "https://music.youtube.com/watch?v=${song.videoId}",
+                "Listen on SimpMusic" to "https://simpmusic.org/app/watch?v=${song.videoId}",
                 "Visit SimpMusic" to "https://github.com/maxrave-dev/SimpMusic"
             ),
             type = Type.LISTENING,
