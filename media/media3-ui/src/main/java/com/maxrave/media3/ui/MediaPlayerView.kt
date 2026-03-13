@@ -71,6 +71,8 @@ import org.koin.compose.koinInject
 import org.koin.core.qualifier.named
 import kotlin.math.roundToInt
 
+private val RICH_SYNC_TIMESTAMP_REGEX = Regex("""<\d{2}:\d{2}\.\d{2,3}>\s*""")
+
 @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun MediaPlayerView(
@@ -460,7 +462,7 @@ fun MediaPlayerViewWithSubtitle(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Text(
-                                    text = lines.getOrNull(currentLineIndex)?.words ?: return@Crossfade,
+                                    text = lines.getOrNull(currentLineIndex)?.words?.replace(RICH_SYNC_TIMESTAMP_REGEX, "")?.trim() ?: return@Crossfade,
                                     style =
                                         mainTextStyle
                                             .let {
@@ -482,7 +484,7 @@ fun MediaPlayerViewWithSubtitle(
                                     val translateLines = translatedLyricsData?.lines ?: return@Crossfade
                                     if (translate) {
                                         Text(
-                                            text = translateLines.getOrNull(currentTranslatedLineIndex)?.words ?: return@Crossfade,
+                                            text = translateLines.getOrNull(currentTranslatedLineIndex)?.words?.replace(RICH_SYNC_TIMESTAMP_REGEX, "")?.trim() ?: return@Crossfade,
                                             style =
                                                 translatedTextStyle.let {
                                                     if (isInPipMode || shouldScaleDownSubtitle) {
