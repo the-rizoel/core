@@ -1550,13 +1550,15 @@ class VlcPlayerAdapter(
                         if (!isActive) break
 
                         val progress = step.toFloat() / steps
+                        val angle = progress * Math.PI / 2.0
 
-                        // Fade out current player
-                        val fadeOutVolume = (targetVolume * (1.0 - progress)).toInt()
+                        // Equal-power crossfade using sine curve
+                        // Fade out: cos curve holds volume longer, then drops naturally
+                        val fadeOutVolume = (targetVolume * kotlin.math.cos(angle)).toInt()
                         currentPlayer?.setVolume(fadeOutVolume)
 
-                        // Fade in next player
-                        val fadeInVolume = (targetVolume * progress).toInt()
+                        // Fade in: sin curve brings next track in earlier
+                        val fadeInVolume = (targetVolume * kotlin.math.sin(angle)).toInt()
                         nextPlayer.setVolume(fadeInVolume)
 
                         delay(delayPerStep.toLong())
