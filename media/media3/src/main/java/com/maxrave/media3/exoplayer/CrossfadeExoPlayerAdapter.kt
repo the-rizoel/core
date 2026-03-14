@@ -545,30 +545,22 @@ internal class CrossfadeExoPlayerAdapter(
             }
         }
 
-        if (crossfadeEnabled) {
-            // Standard music player behavior:
-            // - Position > 3s  → seek to start of current track (instant, no player teardown)
-            // - Position <= 3s → go to previous track (requires loading a new player)
-            val positionThresholdMs = 3000L
-            if (cachedPosition > positionThresholdMs) {
-                Logger.d(TAG, "seekToPrevious: Crossfade enabled, pos=${cachedPosition}ms > ${positionThresholdMs}ms — seeking to start")
-                currentPlayer?.seekTo(0)
-                cachedPosition = 0
-            } else if (hasPreviousMediaItem()) {
-                Logger.d(TAG, "seekToPrevious: Crossfade enabled, pos=${cachedPosition}ms <= ${positionThresholdMs}ms — going to previous track")
-                val prevIndex = getPreviousMediaItemIndex()
-                seekTo(prevIndex, 0)
-            } else {
-                Logger.d(TAG, "seekToPrevious: No previous item, seeking to start")
-                currentPlayer?.seekTo(0)
-                cachedPosition = 0
-            }
-            return
-        }
-
-        if (hasPreviousMediaItem()) {
+        // Standard music player behavior:
+        // - Position > 3s  → seek to start of current track
+        // - Position <= 3s → go to previous track
+        val positionThresholdMs = 3000L
+        if (cachedPosition > positionThresholdMs) {
+            Logger.d(TAG, "seekToPrevious: pos=${cachedPosition}ms > ${positionThresholdMs}ms — seeking to start")
+            currentPlayer?.seekTo(0)
+            cachedPosition = 0
+        } else if (hasPreviousMediaItem()) {
+            Logger.d(TAG, "seekToPrevious: pos=${cachedPosition}ms <= ${positionThresholdMs}ms — going to previous track")
             val prevIndex = getPreviousMediaItemIndex()
             seekTo(prevIndex, 0)
+        } else {
+            Logger.d(TAG, "seekToPrevious: No previous item, seeking to start")
+            currentPlayer?.seekTo(0)
+            cachedPosition = 0
         }
     }
 
