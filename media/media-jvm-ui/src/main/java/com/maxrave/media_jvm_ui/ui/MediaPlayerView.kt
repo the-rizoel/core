@@ -73,15 +73,17 @@ fun MediaPlayerViewWithUrl(
             player.videoSurface().set(surface)
             vlcPlayer = player
 
-            player.events().addMediaPlayerEventListener(object : MediaPlayerEventAdapter() {
-                override fun finished(mediaPlayer: MediaPlayer) {
-                    // VLCJ deadlocks if you call player methods from the event callback thread.
-                    // Dispatch replay onto the Swing EDT to avoid the deadlock.
-                    scope.launch(Dispatchers.Swing) {
-                        mediaPlayer.media().play(url)
+            player.events().addMediaPlayerEventListener(
+                object : MediaPlayerEventAdapter() {
+                    override fun finished(mediaPlayer: MediaPlayer) {
+                        // VLCJ deadlocks if you call player methods from the event callback thread.
+                        // Dispatch replay onto the Swing EDT to avoid the deadlock.
+                        scope.launch(Dispatchers.Swing) {
+                            mediaPlayer.media().play(url)
+                        }
                     }
-                }
-            })
+                },
+            )
 
             videoPanel = panel
             player.media().play(url)
@@ -112,9 +114,10 @@ fun MediaPlayerViewWithUrl(
                             add(panel, java.awt.BorderLayout.CENTER)
                         }
                     },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .align(Alignment.Center),
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .align(Alignment.Center),
                     background = Color.Transparent,
                 )
             }
@@ -123,6 +126,7 @@ fun MediaPlayerViewWithUrl(
 }
 
 private val RICH_SYNC_TIMESTAMP_REGEX = Regex("""<\d{2}:\d{2}\.\d{2,3}>\s*""")
+
 @Composable
 fun MediaPlayerViewWithSubtitleJvm(
     modifier: Modifier,
@@ -157,11 +161,12 @@ fun MediaPlayerViewWithSubtitleJvm(
             lines.indices.forEach { i ->
                 val sentence = lines[i]
                 val startTimeMs = sentence.startTimeMs.toLong()
-                val endTimeMs = if (i < lines.size - 1) {
-                    lines[i + 1].startTimeMs.toLong()
-                } else {
-                    startTimeMs + 60000
-                }
+                val endTimeMs =
+                    if (i < lines.size - 1) {
+                        lines[i + 1].startTimeMs.toLong()
+                    } else {
+                        startTimeMs + 60000
+                    }
                 if (timelineState.current in startTimeMs..endTimeMs) {
                     currentLineIndex = i
                 }
@@ -169,11 +174,12 @@ fun MediaPlayerViewWithSubtitleJvm(
             translatedLines?.indices?.forEach { i ->
                 val sentence = translatedLines[i]
                 val startTimeMs = sentence.startTimeMs.toLong()
-                val endTimeMs = if (i < translatedLines.size - 1) {
-                    translatedLines[i + 1].startTimeMs.toLong()
-                } else {
-                    startTimeMs + 60000
-                }
+                val endTimeMs =
+                    if (i < translatedLines.size - 1) {
+                        translatedLines[i + 1].startTimeMs.toLong()
+                    } else {
+                        startTimeMs + 60000
+                    }
                 if (timelineState.current in startTimeMs..endTimeMs) {
                     currentTranslatedLineIndex = i
                 }
@@ -191,13 +197,14 @@ fun MediaPlayerViewWithSubtitleJvm(
     }
 
     Box(
-        modifier = modifier
-            .graphicsLayer { clip = true }
-            .onGloballyPositioned {
-                val width = it.size.width
-                val height = it.size.height
-                sizePx = width to height
-            },
+        modifier =
+            modifier
+                .graphicsLayer { clip = true }
+                .onGloballyPositioned {
+                    val width = it.size.width
+                    val height = it.size.height
+                    sizePx = width to height
+                },
         contentAlignment = Alignment.Center,
     ) {
         // SwingPanel (native Swing component) does not support Compose animation layers
@@ -206,18 +213,20 @@ fun MediaPlayerViewWithSubtitleJvm(
         // Use a simple conditional instead so the old panel is removed immediately.
         if (showArtwork) {
             AsyncImage(
-                model = ImageRequest
-                    .Builder(LocalPlatformContext.current)
-                    .data(artworkUri)
-                    .diskCachePolicy(CachePolicy.ENABLED)
-                    .diskCacheKey(artworkUri)
-                    .crossfade(550)
-                    .build(),
+                model =
+                    ImageRequest
+                        .Builder(LocalPlatformContext.current)
+                        .data(artworkUri)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .diskCacheKey(artworkUri)
+                        .crossfade(550)
+                        .build(),
                 contentDescription = null,
                 contentScale = ContentScale.FillHeight,
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .align(Alignment.Center),
+                modifier =
+                    Modifier
+                        .fillMaxHeight()
+                        .align(Alignment.Center),
             )
         } else {
             val canvas = videoCanvas
@@ -232,8 +241,9 @@ fun MediaPlayerViewWithSubtitleJvm(
                                 add(canvas, java.awt.BorderLayout.CENTER)
                             }
                         },
-                        modifier = Modifier
-                            .fillMaxSize(),
+                        modifier =
+                            Modifier
+                                .fillMaxSize(),
                         background = Color.Black,
                     )
                 }
@@ -242,9 +252,10 @@ fun MediaPlayerViewWithSubtitleJvm(
         if (lyricsData != null && shouldShowSubtitle) {
             Crossfade(
                 currentLineIndex != -1,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxSize(),
+                modifier =
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxSize(),
             ) {
                 val lines = lyricsData.lines ?: return@Crossfade
                 if (it) {
@@ -262,38 +273,47 @@ fun MediaPlayerViewWithSubtitleJvm(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Text(
-                                    text = lines.getOrNull(currentLineIndex)?.words?.replace(RICH_SYNC_TIMESTAMP_REGEX, "")?.trim() ?: return@Crossfade,,
-                                    style = mainTextStyle.let { style ->
-                                        if (shouldScaleDownSubtitle) {
-                                            style.copy(fontSize = style.fontSize * 0.8f)
-                                        } else {
-                                            style
-                                        }
-                                    },
+                                    text =
+                                        lines
+                                            .getOrNull(currentLineIndex)
+                                            ?.words
+                                            ?.replace(RICH_SYNC_TIMESTAMP_REGEX, "")
+                                            ?.trim() ?: return@Crossfade,
+                                    style =
+                                        mainTextStyle.let { style ->
+                                            if (shouldScaleDownSubtitle) {
+                                                style.copy(fontSize = style.fontSize * 0.8f)
+                                            } else {
+                                                style
+                                            }
+                                        },
                                     color = Color.White,
                                     textAlign = TextAlign.Center,
-                                    modifier = Modifier
-                                        .padding(4.dp)
-                                        .background(Color.Black.copy(alpha = 0.5f))
-                                        .wrapContentWidth(),
+                                    modifier =
+                                        Modifier
+                                            .padding(4.dp)
+                                            .background(Color.Black.copy(alpha = 0.5f))
+                                            .wrapContentWidth(),
                                 )
                                 Crossfade(translatedLyricsData?.lines != null, label = "") { translate ->
                                     val translateLines = translatedLyricsData?.lines ?: return@Crossfade
                                     if (translate) {
                                         Text(
                                             text = translateLines.getOrNull(currentTranslatedLineIndex)?.words ?: return@Crossfade,
-                                            style = translatedTextStyle.let { style ->
-                                                if (shouldScaleDownSubtitle) {
-                                                    style.copy(fontSize = style.fontSize * 0.8f)
-                                                } else {
-                                                    style
-                                                }
-                                            },
+                                            style =
+                                                translatedTextStyle.let { style ->
+                                                    if (shouldScaleDownSubtitle) {
+                                                        style.copy(fontSize = style.fontSize * 0.8f)
+                                                    } else {
+                                                        style
+                                                    }
+                                                },
                                             color = Color.Yellow,
                                             textAlign = TextAlign.Center,
-                                            modifier = Modifier
-                                                .background(Color.Black.copy(alpha = 0.5f))
-                                                .wrapContentWidth(),
+                                            modifier =
+                                                Modifier
+                                                    .background(Color.Black.copy(alpha = 0.5f))
+                                                    .wrapContentWidth(),
                                         )
                                     }
                                 }

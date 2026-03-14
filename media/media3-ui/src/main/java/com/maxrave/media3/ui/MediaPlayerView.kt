@@ -426,10 +426,11 @@ fun MediaPlayerViewWithSubtitle(
                 PlayerSurface(
                     player = player,
                     surfaceType = SURFACE_TYPE_SURFACE_VIEW,
-                    modifier = Modifier
-                        .wrapContentSize()
-                        .aspectRatio(if (videoRatio > 0f) videoRatio else 16f / 9)
-                        .align(Alignment.Center),
+                    modifier =
+                        Modifier
+                            .wrapContentSize()
+                            .aspectRatio(if (videoRatio > 0f) videoRatio else 16f / 9)
+                            .align(Alignment.Center),
                 )
 
                 if (presentationState.coverSurface) {
@@ -462,7 +463,13 @@ fun MediaPlayerViewWithSubtitle(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 Text(
-                                    text = lines.getOrNull(currentLineIndex)?.words?.replace(RICH_SYNC_TIMESTAMP_REGEX, "")?.trim() ?: return@Crossfade,
+                                    text =
+                                        lines
+                                            .getOrNull(currentLineIndex)
+                                            ?.words
+                                            ?.replace(RICH_SYNC_TIMESTAMP_REGEX, "")
+                                            ?.trim()
+                                            ?: return@Crossfade,
                                     style =
                                         mainTextStyle
                                             .let {
@@ -484,7 +491,14 @@ fun MediaPlayerViewWithSubtitle(
                                     val translateLines = translatedLyricsData?.lines ?: return@Crossfade
                                     if (translate) {
                                         Text(
-                                            text = translateLines.getOrNull(currentTranslatedLineIndex)?.words?.replace(RICH_SYNC_TIMESTAMP_REGEX, "")?.trim() ?: return@Crossfade,
+                                            text =
+                                                translateLines
+                                                    .getOrNull(
+                                                        currentTranslatedLineIndex,
+                                                    )?.words
+                                                    ?.replace(RICH_SYNC_TIMESTAMP_REGEX, "")
+                                                    ?.trim()
+                                                    ?: return@Crossfade,
                                             style =
                                                 translatedTextStyle.let {
                                                     if (isInPipMode || shouldScaleDownSubtitle) {
