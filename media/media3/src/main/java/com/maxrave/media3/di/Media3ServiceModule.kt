@@ -527,11 +527,10 @@ fun startService(
 ) {
     val intent = Intent(context, SimpleMediaService::class.java)
     try {
-        ContextCompat.startForegroundService(context, intent)
+        context.startService(intent)
     } catch (e: IllegalStateException) {
         // BackgroundServiceStartNotAllowedException (Android 12+)
-        // Service will still be created by bindService with BIND_AUTO_CREATE
-        Logger.w("Service", "Cannot start foreground service from background, falling back to bind only: ${e.message}")
+        ContextCompat.startForegroundService(context, intent)
     }
     context.bindService(intent, serviceConnection, BIND_AUTO_CREATE)
     Logger.d("Service", "Service started")
