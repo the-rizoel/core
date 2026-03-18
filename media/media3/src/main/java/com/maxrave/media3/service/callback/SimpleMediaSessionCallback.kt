@@ -41,8 +41,10 @@ import com.maxrave.domain.utils.toTrack
 import com.maxrave.logger.Logger
 import com.maxrave.media3.R
 import com.maxrave.media3.extension.toMediaItem
+import com.maxrave.domain.mediaservice.handler.PlayerEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.lastOrNull
@@ -118,8 +120,9 @@ internal class SimpleMediaSessionCallback(
             }
 
             MEDIA_CUSTOM_COMMAND.SHUFFLE -> {
-                val isShuffle = session.player.shuffleModeEnabled
-                session.player.shuffleModeEnabled = !isShuffle
+                scope.launch {
+                    mediaPlayerHandler.onPlayerEvent(PlayerEvent.Shuffle)
+                }
             }
         }
         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
