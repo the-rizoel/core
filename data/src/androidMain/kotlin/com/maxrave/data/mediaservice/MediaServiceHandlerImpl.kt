@@ -69,6 +69,7 @@ import com.maxrave.logger.Logger
 import com.my.kizzy.DiscordRPC
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -2318,13 +2319,13 @@ internal class MediaServiceHandlerImpl(
     }
 
     private fun updateDiscordRpc(song: SongEntity) {
-        backgroundScope.launch {
-            discordRPC?.updateSong(
-                getProgress(),
-                getPlayerDuration(),
-                dataStoreManager.playbackSpeed.first(),
-                song,
-            )
+        coroutineScope.launch {
+            val progress = getProgress()
+            val duration = getPlayerDuration()
+            val speed = dataStoreManager.playbackSpeed.first()
+            withContext(Dispatchers.IO) {
+                discordRPC?.updateSong(progress, duration, speed, song)
+            }
         }
     }
 
