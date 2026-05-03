@@ -177,6 +177,13 @@ sealed class PlayerEvent {
 
     data object Previous : PlayerEvent()
 
+    /**
+     * Always advances to the previous media item, bypassing the 3-second
+     * "seek to start of current track" behaviour of [Previous]. Used by UI
+     * affordances like the artwork pager swipe.
+     */
+    data object SkipToPrevious : PlayerEvent()
+
     data object Shuffle : PlayerEvent()
 
     data object Repeat : PlayerEvent()

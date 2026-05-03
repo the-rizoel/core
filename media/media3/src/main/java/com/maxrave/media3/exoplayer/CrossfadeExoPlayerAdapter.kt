@@ -264,6 +264,9 @@ internal class CrossfadeExoPlayerAdapter(
                 override fun seekToNext(): Unit = this@CrossfadeExoPlayerAdapter.seekToNext()
 
                 override fun seekToPrevious(): Unit = this@CrossfadeExoPlayerAdapter.seekToPrevious()
+
+                override fun seekToPreviousMediaItem(): Unit =
+                    this@CrossfadeExoPlayerAdapter.seekToPreviousMediaItem()
             }
     }
 
@@ -561,6 +564,46 @@ internal class CrossfadeExoPlayerAdapter(
             Logger.d(TAG, "seekToPrevious: No previous item, seeking to start")
             currentPlayer?.seekTo(0)
             cachedPosition = 0
+        }
+    }
+
+    override fun seekToPreviousMediaItem() {
+        // Cancel any ongoing crossfade first (mirror seekToPrevious()).
+        if (isCrossfading) {
+            Logger.d(TAG, "seekToPreviousMediaItem: Cancelling crossfade")
+            coroutineScope.launch {
+                crossfadeJob?.cancel()
+                crossfadeJob = null
+                currentPlayerFilter?.enabled = false
+                secondaryPlayerFilter?.enabled = false
+                secondaryPlayer?.release()
+                secondaryPlayer = null
+                secondaryPlayerFilter = null
+                setCrossfading(false)
+                if (crossfadeFromIndex >= 0) {
+                    localCurrentMediaItemIndex = crossfadeFromIndex
+                    playlist.getOrNull(crossfadeFromIndex)?.let { mediaItem ->
+                        listeners.forEach {
+                            it.onMediaItemTransition(
+                                mediaItem,
+                                PlayerConstants.MEDIA_ITEM_TRANSITION_REASON_SEEK,
+                            )
+                        }
+                    }
+                    forwardingPlayer.notifyMediaItemChanged()
+                    crossfadeFromIndex = -1
+                }
+            }
+        }
+
+        // Always advance to the previous track regardless of `cachedPosition` —
+        // skips the 3-second "seek to start" rule used by seekToPrevious().
+        if (hasPreviousMediaItem()) {
+            val prevIndex = getPreviousMediaItemIndex()
+            Logger.d(TAG, "seekToPreviousMediaItem: jumping to previous index=$prevIndex")
+            seekTo(prevIndex, 0)
+        } else {
+            Logger.d(TAG, "seekToPreviousMediaItem: No previous item — no-op")
         }
     }
 

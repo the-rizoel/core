@@ -29,6 +29,15 @@ interface MediaPlayerInterface {
 
     fun seekToPrevious()
 
+    /**
+     * Always advances to the previous media item, regardless of the current playback
+     * position. This is the version used by UI affordances that should NOT exhibit
+     * the "tap once to restart, tap again to go back" behaviour of [seekToPrevious]
+     * (e.g. swiping the artwork pager). Implementations must skip the 3-second
+     * "seek to start" threshold and go straight to the previous track.
+     */
+    fun seekToPreviousMediaItem()
+
     fun prepare()
 
     // Media item management
