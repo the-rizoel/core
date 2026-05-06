@@ -1153,32 +1153,6 @@ internal class DataStoreManagerImpl(
         }
     }
 
-    override val prefer320kbpsStream: Flow<String> =
-        settingsDataStore.data.map { preferences ->
-            preferences[PREFER_320KBPS_STREAM] ?: FALSE
-        }
-
-    override suspend fun setPrefer320kbpsStream(enabled: Boolean) {
-        withContext(Dispatchers.IO) {
-            settingsDataStore.edit { settings ->
-                settings[PREFER_320KBPS_STREAM] = if (enabled) TRUE else FALSE
-            }
-        }
-    }
-
-    override val your320kbpsUrl: Flow<String> =
-        settingsDataStore.data.map { preferences ->
-            preferences[YOUR_320KBPS_URL] ?: ""
-        }
-
-    override suspend fun setYour320kbpsUrl(url: String) {
-        withContext(Dispatchers.IO) {
-            settingsDataStore.edit { settings ->
-                settings[YOUR_320KBPS_URL] = url
-            }
-        }
-    }
-
     override val youtubeSubtitleLanguage =
         settingsDataStore.data.map { preferences ->
             val languageValue = language.first()
@@ -1419,8 +1393,6 @@ internal class DataStoreManagerImpl(
         val CROSSFADE_ENABLED = stringPreferencesKey("crossfade_enabled")
         val CROSSFADE_DURATION = intPreferencesKey("crossfade_duration")
         val CROSSFADE_DJ_MODE = stringPreferencesKey("crossfade_dj_mode")
-        val PREFER_320KBPS_STREAM = stringPreferencesKey("prefer_320kbps_stream")
-        val YOUR_320KBPS_URL = stringPreferencesKey("your_320kbps_url")
         val LYRICS_PROVIDER = stringPreferencesKey("lyrics_provider")
         val TRANSLATION_LANGUAGE = stringPreferencesKey("translation_language")
         val USE_TRANSLATION_LANGUAGE = stringPreferencesKey("use_translation_language")

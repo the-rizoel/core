@@ -290,14 +290,6 @@ interface DataStoreManager {
 
     suspend fun setCrossfadeDjMode(enabled: Boolean)
 
-    val prefer320kbpsStream: Flow<String>
-
-    suspend fun setPrefer320kbpsStream(enabled: Boolean)
-
-    val your320kbpsUrl: Flow<String>
-
-    suspend fun setYour320kbpsUrl(url: String)
-
     val youtubeSubtitleLanguage: Flow<String>
 
     suspend fun setYoutubeSubtitleLanguage(language: String)

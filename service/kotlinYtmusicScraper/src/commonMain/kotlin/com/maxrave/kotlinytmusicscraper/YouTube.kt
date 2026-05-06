@@ -80,7 +80,6 @@ import com.maxrave.kotlinytmusicscraper.parser.getPlaylistContinuation
 import com.maxrave.kotlinytmusicscraper.parser.getReloadParams
 import com.maxrave.kotlinytmusicscraper.parser.getSuggestionSongItems
 import com.maxrave.kotlinytmusicscraper.parser.hasReloadParams
-import com.maxrave.kotlinytmusicscraper.utils.decodeTidalManifest
 import com.maxrave.logger.Logger
 import com.mohamedrejeb.ksoup.html.parser.KsoupHtmlHandler
 import com.mohamedrejeb.ksoup.html.parser.KsoupHtmlParser
@@ -1993,7 +1992,6 @@ class YouTube {
         track: SongItem,
         filePath: String,
         videoId: String,
-        should320kbps: Pair<Boolean, String>,
         isVideo: Boolean = false,
     ): Flow<DownloadProgress> =
         channelFlow {
@@ -2025,59 +2023,8 @@ class YouTube {
                         ).maxByOrNull { it?.bitrate ?: 0 }
                     Logger.d(TAG, "Audio Format $audioFormat")
                     Logger.d(TAG, "Video Format $videoFormat")
-                    val durationSecond =
-                        playerResponse.second.videoDetails
-                            ?.lengthSeconds
-                            ?.toIntOrNull()
                     val audioUrl =
-                        if (should320kbps.first && !isVideo && durationSecond != null) {
-                            val streamingUrl = getTidalEndpoints(should320kbps.second).streamingUrl
-                            if (streamingUrl == null) {
-                                Logger.d("Stream", "No working Tidal streaming endpoint, falling back to YouTube audio")
-                                audioFormat?.url
-                            } else {
-                                Logger.d("Stream", "Prefer 320kbps enabled ${playerResponse.second.videoDetails}")
-                                val title = playerResponse.second.videoDetails?.title ?: ""
-                                val author = playerResponse.second.videoDetails?.author ?: ""
-                                val q =
-                                    "$title $author"
-                                        .replace(
-                                            Regex("\\((feat\\.|ft.|cùng với|con|mukana|com|avec|合作音乐人: ) "),
-                                            " ",
-                                        ).replace(
-                                            Regex("( và | & | и | e | und |, |和| dan)"),
-                                            " ",
-                                        ).replace("  ", " ")
-                                        .replace(Regex("([()])"), "")
-                                        .replace(".", " ")
-                                        .replace("  ", " ")
-                                Logger.d("Stream", "Search query for 320kbps: $q")
-                                val res =
-                                    getTidalStream(streamingUrl, q, durationSecond)
-                                        .apply {
-                                            onSuccess {
-                                                Logger.w("Stream", "Tidal response: $this")
-                                            }.onFailure {
-                                                Logger.e("Stream", "Tidal error: ${it.message}", it)
-                                            }
-                                        }.getOrNull()
-                                val audioData =
-                                    res
-                                        ?.stream
-                                        ?.data
-                                        ?.manifest
-                                        ?.decodeTidalManifest()
-                                if (audioData != null) {
-                                    Logger.d("Stream", "Found potential 320kbps stream from Tidal: $res")
-                                    audioData.urls.firstOrNull() ?: audioFormat?.url
-                                } else {
-                                    Logger.d("Stream", "Found potential 320kbps stream from Tidal manifest DASH: ${res?.stream?.data?.manifest}")
-                                    audioFormat?.url
-                                }
-                            }
-                        } else {
-                            audioFormat?.url
-                        } ?: run {
+                        audioFormat?.url ?: run {
                             trySend(DownloadProgress.failed("Audio format url is null"))
                             return@channelFlow
                         }
