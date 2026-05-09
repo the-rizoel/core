@@ -3,18 +3,18 @@ package com.maxrave.kotlinytmusicscraper.extractor
 import com.maxrave.kotlinytmusicscraper.models.YouTubeClient
 import com.maxrave.kotlinytmusicscraper.models.response.PlayerResponse
 import com.maxrave.logger.Logger
+import dev.maxrave.pipepipe.extractor.NewPipe
+import dev.maxrave.pipepipe.extractor.downloader.CancellableCall
+import dev.maxrave.pipepipe.extractor.downloader.Downloader
+import dev.maxrave.pipepipe.extractor.downloader.Request
+import dev.maxrave.pipepipe.extractor.downloader.Response
+import dev.maxrave.pipepipe.extractor.exceptions.ParsingException
+import dev.maxrave.pipepipe.extractor.exceptions.ReCaptchaException
+import dev.maxrave.pipepipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
 import io.ktor.http.URLBuilder
 import io.ktor.http.parseQueryString
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.schabi.newpipe.extractor.NewPipe
-import org.schabi.newpipe.extractor.downloader.CancellableCall
-import org.schabi.newpipe.extractor.downloader.Downloader
-import org.schabi.newpipe.extractor.downloader.Request
-import org.schabi.newpipe.extractor.downloader.Response
-import org.schabi.newpipe.extractor.exceptions.ParsingException
-import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
-import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
 import java.io.IOException
 import java.net.Proxy
 
@@ -46,29 +46,37 @@ class NewPipeDownloaderImpl(
     ): CancellableCall {
         val call = client.newCall(buildOkHttpRequest(request))
         val cancellable = CancellableCall(call)
-        call.enqueue(object : okhttp3.Callback {
-            override fun onFailure(call: okhttp3.Call, e: IOException) {
-                cancellable.setFinished()
-                callback?.onError(e)
-            }
-
-            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                try {
-                    if (response.code == 429) {
-                        response.close()
-                        callback?.onError(
-                            ReCaptchaException("reCaptcha Challenge requested", request.url()),
-                        )
-                        return
-                    }
-                    callback?.onSuccess(response.toNewPipeResponse())
-                } catch (e: Exception) {
-                    callback?.onError(e)
-                } finally {
+        call.enqueue(
+            object : okhttp3.Callback {
+                override fun onFailure(
+                    call: okhttp3.Call,
+                    e: IOException,
+                ) {
                     cancellable.setFinished()
+                    callback?.onError(e)
                 }
-            }
-        })
+
+                override fun onResponse(
+                    call: okhttp3.Call,
+                    response: okhttp3.Response,
+                ) {
+                    try {
+                        if (response.code == 429) {
+                            response.close()
+                            callback?.onError(
+                                ReCaptchaException("reCaptcha Challenge requested", request.url()),
+                            )
+                            return
+                        }
+                        callback?.onSuccess(response.toNewPipeResponse())
+                    } catch (e: Exception) {
+                        callback?.onError(e)
+                    } finally {
+                        cancellable.setFinished()
+                    }
+                }
+            },
+        )
         return cancellable
     }
 
