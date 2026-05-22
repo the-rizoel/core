@@ -1,6 +1,7 @@
 package com.simpmusic.media_jvm
 
 import com.maxrave.logger.Logger
+import uk.co.caprica.vlcj.binding.lib.LibC
 import uk.co.caprica.vlcj.factory.discovery.strategy.NativeDiscoveryStrategy
 import java.io.File
 
@@ -30,8 +31,23 @@ class DefaultVlcDiscoverer : NativeDiscoveryStrategy {
     }
 
     override fun onSetPluginPath(path: String): Boolean {
-        Logger.i(tag, "VLC plugin path set to $path")
-        return true
+        // vlcj's NativeDiscovery.tryPluginPath() only invokes this callback
+        // when the VLC_PLUGIN_PATH env var is null/empty, and it delegates
+        // the actual setenv call to the strategy itself (verified by
+        // decompiling vlcj-4.12.1's NativeDiscovery bytecode). The built-in
+        // strategies extend BaseNativeDiscoveryStrategy which performs the
+        // setenv internally, but since we implement the interface directly,
+        // we have to do it ourselves — otherwise libvlc_new() returns NULL
+        // with the bundled VLC because libvlc cannot locate the plugins
+        // subdirectory next to libvlc.so.
+        return try {
+            val ok = LibC.INSTANCE.setenv("VLC_PLUGIN_PATH", path, 1) == 0
+            Logger.i(tag, "VLC plugin path set to $path (setenv ok=$ok)")
+            ok
+        } catch (t: Throwable) {
+            Logger.e(tag, "Failed to set VLC_PLUGIN_PATH env var to $path: $t")
+            false
+        }
     }
 
     companion object {
