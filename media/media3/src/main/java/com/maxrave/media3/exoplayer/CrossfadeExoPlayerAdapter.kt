@@ -39,9 +39,12 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.ln
+import kotlin.math.sin
 
 private const val TAG = "CrossfadeExoPlayerAdapter"
 
@@ -265,8 +268,7 @@ internal class CrossfadeExoPlayerAdapter(
 
                 override fun seekToPrevious(): Unit = this@CrossfadeExoPlayerAdapter.seekToPrevious()
 
-                override fun seekToPreviousMediaItem(): Unit =
-                    this@CrossfadeExoPlayerAdapter.seekToPreviousMediaItem()
+                override fun seekToPreviousMediaItem(): Unit = this@CrossfadeExoPlayerAdapter.seekToPreviousMediaItem()
             }
     }
 
@@ -1738,6 +1740,12 @@ internal class CrossfadeExoPlayerAdapter(
         var lastOutgoingSpeed = -1f
         var lastOutgoingPitch = -1f
 
+        // Front-loaded BPM/pitch ramp portion (fraction of crossfade duration).
+        // Speed/pitch reach target within the first [BPM_RAMP_PORTION] of crossfade,
+        // then HOLD for the remainder so both tracks share the same effective BPM
+        // throughout the audible overlap.
+        val bpmRampPortion = BPM_RAMP_PORTION
+
         crossfadeJob?.cancel()
         crossfadeJob =
             coroutineScope.launch {
@@ -1747,12 +1755,22 @@ internal class CrossfadeExoPlayerAdapter(
 
                         val progress = step.toFloat() / steps
 
-                        // Fade out current player (old track)
-                        val fadeOutVolume = targetVolume * (1f - progress)
+                        // Equal-power crossfade (cos/sin curves) instead of linear.
+                        // Human loudness perception is logarithmic — linear volume fade makes
+                        // the outgoing track "die" perceptually around the midpoint while
+                        // incoming hasn't filled in yet, leaving an audible gap.
+                        // cos²(θ) + sin²(θ) = 1 → total acoustic power stays constant across
+                        // the blend, so the listener perceives a smooth handoff with the
+                        // outgoing remaining audible long enough for the DJ filter sweep
+                        // to register.
+                        val fadeAngle = (progress * PI / 2).toFloat()
+
+                        // Fade out current player (old track): cos curve, slow at start, fast at end
+                        val fadeOutVolume = targetVolume * cos(fadeAngle)
                         currentPlayer?.volume = fadeOutVolume
 
-                        // Fade in next player (new track)
-                        val fadeInVolume = targetVolume * progress
+                        // Fade in next player (new track): sin curve, fast at start, slow at end
+                        val fadeInVolume = targetVolume * sin(fadeAngle)
                         nextPlayer.volume = fadeInVolume
 
                         // DJ-style filter sweep (alongside volume)
@@ -1775,13 +1793,24 @@ internal class CrossfadeExoPlayerAdapter(
 
                         // AutoMix: only adjust the OUTGOING (previous) player to match
                         // the incoming track. The incoming player stays at natural speed/pitch.
-                        // Outgoing: ramp from natural (1.0) → targetRatio
-                        // Quantize to SPEED_PITCH_STEP to avoid SonicAudioProcessor
-                        // popping from too-frequent micro-adjustments
+                        //
+                        // Front-loaded ramp: outgoing speed/pitch reach target within the
+                        // first [bpmRampPortion] of crossfade, then HOLD at target for the
+                        // remainder. This way the bulk of the audible blend plays at matched
+                        // BPM (DJ-style beat alignment) instead of catching up only at the
+                        // very end when outgoing volume is already 0.
+                        //
+                        // Quantize to SPEED_PITCH_STEP to avoid SonicAudioProcessor popping
+                        // from too-frequent micro-adjustments.
                         if (useAutoMixRamp) {
-                            // Outgoing player: natural → target ratio (match incoming track)
-                            val rawOutSpeed = lerp(1.0f, targetSpeedRatio, progress)
-                            val rawOutPitch = lerp(1.0f, targetPitchRatio, progress)
+                            val rampProgress =
+                                if (bpmRampPortion <= 0f) {
+                                    1f
+                                } else {
+                                    (progress / bpmRampPortion).coerceAtMost(1f)
+                                }
+                            val rawOutSpeed = lerp(1.0f, targetSpeedRatio, rampProgress)
+                            val rawOutPitch = lerp(1.0f, targetPitchRatio, rampProgress)
                             val qOutSpeed = quantize(rawOutSpeed * internalPlaybackSpeed)
                             val qOutPitch = quantize(rawOutPitch * internalPlaybackPitch)
 
@@ -1947,7 +1976,11 @@ internal class CrossfadeExoPlayerAdapter(
         }
         if (currentBpm <= 0 || nextBpm <= 0) return 1.0f
 
-        var ratio = currentBpm.toFloat() / nextBpm.toFloat()
+        // Ratio is APPLIED to outgoing player so its effective BPM matches next track.
+        //   outgoing_effective_BPM = currentBpm × ratio
+        //   want outgoing_effective_BPM = nextBpm
+        //   → ratio = nextBpm / currentBpm
+        var ratio = nextBpm.toFloat() / currentBpm.toFloat()
 
         // Normalize halftime/doubletime relationships (e.g., 140/70 → 1.0, 70/140 → 1.0)
         while (ratio > 1.5f) ratio /= 2f
@@ -2146,9 +2179,9 @@ internal class CrossfadeExoPlayerAdapter(
         private const val HPF_END_HZ = 20f // High-pass ends wide open
 
         // AutoMix constants
-        private const val AUTO_FALLBACK_DURATION_MS = 25000 // Default when no BPM data
-        private const val AUTO_MIN_DURATION_MS = 15000
-        private const val AUTO_MAX_DURATION_MS = 40000
+        private const val AUTO_FALLBACK_DURATION_MS = 30000 // Default when no BPM data
+        private const val AUTO_MIN_DURATION_MS = 20000
+        private const val AUTO_MAX_DURATION_MS = 45000
         private val BEAT_COUNT_OPTIONS = intArrayOf(16, 32, 48, 64, 80, 96)
         private const val DEFAULT_BEAT_COUNT = 32
         private const val BPM_RATIO_MIN = 0.5f // Max 50% slower
@@ -2157,6 +2190,13 @@ internal class CrossfadeExoPlayerAdapter(
         // Quantization step for speed/pitch ramp (0.5% = 0.005)
         // Prevents SonicAudioProcessor from popping on micro-adjustments
         private const val SPEED_PITCH_STEP = 0.02f
+
+        // Front-loaded BPM/pitch ramp portion (fraction of crossfade duration).
+        // Outgoing tempo reaches target within the first [BPM_RAMP_PORTION] of the
+        // crossfade and then holds, so the remainder of the blend plays at matched
+        // BPM (DJ-style beat alignment). 0.2 = ramp completes in first 20% of crossfade.
+        private const val BPM_RAMP_PORTION = 0.2f
+
     }
 
     /**
