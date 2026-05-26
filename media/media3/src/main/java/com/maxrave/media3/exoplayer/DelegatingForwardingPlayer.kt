@@ -78,6 +78,29 @@ internal class DelegatingForwardingPlayer(
      */
     var playlistNavigationProvider: PlaylistNavigationProvider? = null
 
+    // ========== Playback-Ended Suppression ==========
+
+    /**
+     * When true, [getPlaybackState] remaps [Player.STATE_ENDED] to [Player.STATE_BUFFERING].
+     *
+     * This prevents [androidx.media3.session.MediaLibraryService] from dropping the
+     * foreground-service notification during the gap between one ExoPlayer finishing
+     * and the next ExoPlayer being swapped in via [swapDelegate].
+     *
+     * Set by [CrossfadeExoPlayerAdapter] before a track-end transition starts,
+     * cleared after the next player is swapped in and playing.
+     */
+    @Volatile
+    var suppressPlaybackEnded = false
+
+    override fun getPlaybackState(): Int {
+        val state = super.getPlaybackState()
+        if (state == Player.STATE_ENDED && suppressPlaybackEnded) {
+            return Player.STATE_BUFFERING
+        }
+        return state
+    }
+
     // ========== Listener Tracking ==========
 
     // Track all externally registered listeners so we can re-register them after delegate swap

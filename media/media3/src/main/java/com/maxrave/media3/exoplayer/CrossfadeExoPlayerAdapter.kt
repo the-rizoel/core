@@ -377,6 +377,7 @@ internal class CrossfadeExoPlayerAdapter(
     override fun pause() {
         Logger.d(TAG, "pause() called (state: $internalState, playWhenReady: $internalPlayWhenReady)")
         coroutineScope.launch {
+            forwardingPlayer.suppressPlaybackEnded = false
             // Cancel any ongoing crossfade
             if (isCrossfading) {
                 Logger.d(TAG, "Pause: Cancelling crossfade")
@@ -433,6 +434,7 @@ internal class CrossfadeExoPlayerAdapter(
 
     override fun stop() {
         coroutineScope.launch {
+            forwardingPlayer.suppressPlaybackEnded = false
             currentPlayer?.let { player ->
                 Logger.d(TAG, "Stop called")
                 player.stop()
@@ -1268,6 +1270,8 @@ internal class CrossfadeExoPlayerAdapter(
                         transitionToState(InternalState.READY)
                     }
 
+                    forwardingPlayer.suppressPlaybackEnded = false
+
                     // Start position updates
                     startPositionUpdates()
 
@@ -1282,6 +1286,7 @@ internal class CrossfadeExoPlayerAdapter(
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     Logger.e(TAG, "Load track error: ${e.message}", e)
+                    forwardingPlayer.suppressPlaybackEnded = false
                     transitionToState(InternalState.ERROR)
                 }
             }
@@ -1309,7 +1314,12 @@ internal class CrossfadeExoPlayerAdapter(
                     when (playbackState) {
                         Player.STATE_ENDED -> {
                             Logger.d(TAG, "End of stream reached")
-                            transitionToState(InternalState.ENDED)
+                            if (hasNextMediaItem()) {
+                                forwardingPlayer.suppressPlaybackEnded = true
+                                transitionToState(InternalState.PREPARING)
+                            } else {
+                                transitionToState(InternalState.ENDED)
+                            }
                             handleTrackEndInternal()
                         }
 
@@ -1583,6 +1593,8 @@ internal class CrossfadeExoPlayerAdapter(
 
                 // 2. Now play - MediaSession's listener is attached and receives state change events
                 nextPlayer.play()
+
+                forwardingPlayer.suppressPlaybackEnded = false
 
                 // 3. Force MediaSession to update notification metadata
                 //    Even though play() triggers onIsPlayingChanged (which causes MediaSession
