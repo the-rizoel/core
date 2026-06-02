@@ -4,6 +4,7 @@ import com.maxrave.kotlinytmusicscraper.models.BrowseEndpoint.BrowseEndpointCont
 import com.maxrave.kotlinytmusicscraper.models.BrowseEndpoint.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig.Companion.MUSIC_PAGE_TYPE_ARTIST
 import com.maxrave.kotlinytmusicscraper.models.BrowseEndpoint.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig.Companion.MUSIC_PAGE_TYPE_AUDIOBOOK
 import com.maxrave.kotlinytmusicscraper.models.BrowseEndpoint.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig.Companion.MUSIC_PAGE_TYPE_PLAYLIST
+import com.maxrave.kotlinytmusicscraper.models.BrowseEndpoint.BrowseEndpointContextSupportedConfigs.BrowseEndpointContextMusicConfig.Companion.MUSIC_PAGE_TYPE_USER_CHANNEL
 import kotlinx.serialization.Serializable
 
 /**
@@ -69,6 +70,16 @@ data class MusicTwoRowItemRenderer(
                 ?.browseEndpointContextMusicConfig
                 ?.pageType ==
                 MUSIC_PAGE_TYPE_ARTIST
+
+    /** A YouTube user channel card (e.g. "Music channels you may like"); shown as an artist. */
+    val isUserChannel: Boolean
+        get() =
+            navigationEndpoint
+                ?.browseEndpoint
+                ?.browseEndpointContextSupportedConfigs
+                ?.browseEndpointContextMusicConfig
+                ?.pageType ==
+                MUSIC_PAGE_TYPE_USER_CHANNEL
     val isVideo: Boolean
         get() =
             navigationEndpoint?.endpoint is WatchEndpoint &&
@@ -85,4 +96,14 @@ data class MusicTwoRowItemRenderer(
                         thumbnail != null && thumbnail.height != thumbnail.width
                     }
                 )
+
+    /** Album/playlist id from the card play button; play endpoint switched watchPlaylistEndpoint -> watchEndpoint (2026 web). */
+    val playlistId: String?
+        get() =
+            thumbnailOverlay
+                ?.musicItemThumbnailOverlayRenderer
+                ?.content
+                ?.musicPlayButtonRenderer
+                ?.playNavigationEndpoint
+                ?.let { it.watchPlaylistEndpoint?.playlistId ?: it.watchEndpoint?.playlistId }
 }
