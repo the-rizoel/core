@@ -1,7 +1,9 @@
 package org.simpmusic.lyrics
 
+import com.maxrave.ktorext.curl.CurlLogger
 import com.maxrave.ktorext.encoding.brotli
 import com.maxrave.ktorext.getEngine
+import com.maxrave.logger.Logger
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.ProxyConfig
 import io.ktor.client.plugins.HttpSend
@@ -41,6 +43,9 @@ class SimpMusicLyrics {
             expectSuccess = false
             followRedirects = true
             install(HttpCache)
+            install(CurlLogger) {
+                logger = { Logger.d("SimpMusicLyrics", it) }
+            }
             install(HttpSend) {
                 maxSendCount = 100
             }

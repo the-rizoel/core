@@ -24,6 +24,7 @@ import com.maxrave.kotlinytmusicscraper.models.body.SearchBody
 import com.maxrave.kotlinytmusicscraper.models.response.DownloadProgress
 import com.maxrave.kotlinytmusicscraper.utils.parseCookieString
 import com.maxrave.kotlinytmusicscraper.utils.sha1
+import com.maxrave.ktorext.curl.CurlLogger
 import com.maxrave.ktorext.encoding.brotli
 import com.maxrave.ktorext.getEngine
 import com.maxrave.logger.Logger
@@ -146,15 +147,9 @@ class Ytmusic {
     private fun createClient() =
         HttpClient(getEngine()) {
             expectSuccess = true
-//            install(KtorToCurl) {
-//                converter =
-//                    object : CurlLogger {
-//                        override fun log(curl: String) {
-//                            Logger.d(TAG, "Curl command:")
-//                            Logger.d(TAG, curl)
-//                        }
-//                    }
-//            }
+            install(CurlLogger) {
+                logger = { Logger.d(TAG, it) }
+            }
             install(HttpRedirect) {
                 checkHttpMethod = false
                 allowHttpsDowngrade = true
