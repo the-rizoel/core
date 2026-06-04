@@ -22,6 +22,7 @@ import com.maxrave.kotlinytmusicscraper.models.body.NextBody
 import com.maxrave.kotlinytmusicscraper.models.body.PlayerBody
 import com.maxrave.kotlinytmusicscraper.models.body.SearchBody
 import com.maxrave.kotlinytmusicscraper.models.response.DownloadProgress
+import com.maxrave.kotlinytmusicscraper.models.response.RemoteConfig
 import com.maxrave.kotlinytmusicscraper.utils.parseCookieString
 import com.maxrave.kotlinytmusicscraper.utils.sha1
 import com.maxrave.ktorext.curl.CurlLogger
@@ -50,6 +51,7 @@ import io.ktor.client.request.forms.submitForm
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Parameters
@@ -127,6 +129,12 @@ class Ytmusic {
         }
 
     var pageId: String? = null
+
+    // TIDAL credentials. Empty until CommonRepositoryImpl pushes the values fetched from the
+    // remote config (cached in DataStore). Deliberately NOT hard-coded in source — while
+    // empty, TIDAL metadata lookups fail silently until the first successful fetch.
+    var tidalClientId: String = ""
+    var tidalClientSecret: String = ""
 
     private var cookieMap = emptyMap<String, String>()
 
@@ -1162,8 +1170,8 @@ class Ytmusic {
             url = TIDAL_AUTH_URL,
             formParameters =
                 Parameters.build {
-                    append("client_id", TIDAL_CLIENT_ID)
-                    append("client_secret", TIDAL_CLIENT_SECRET)
+                    append("client_id", tidalClientId)
+                    append("client_secret", tidalClientSecret)
                     append("grant_type", "client_credentials")
                 },
         )
@@ -1186,11 +1194,31 @@ class Ytmusic {
         parameter("supportsUserData", true)
     }
 
+    /**
+     * Fetch the remote app config (TIDAL credentials) from GitHub raw.
+     *
+     * raw.githubusercontent.com serves .json files as `text/plain`, so Ktor's
+     * ContentNegotiation will not auto-deserialize the body. We read it as text and parse
+     * it explicitly with [normalJson] (which ignores unknown keys for forward-compat).
+     */
+    suspend fun getTidalRemoteConfig(): RemoteConfig {
+        val text =
+            httpClient
+                .get(TIDAL_REMOTE_CONFIG_URL) {
+                    accept(ContentType.Application.Json)
+                }.bodyAsText()
+        return normalJson.decodeFromString(RemoteConfig.serializer(), text)
+    }
+
     companion object {
         private const val TIDAL_AUTH_URL = "https://auth.tidal.com/v1/oauth2/token"
         private const val TIDAL_SEARCH_URL = "https://tidal.com/v2/client-search/"
-        private const val TIDAL_CLIENT_ID = "txNoH4kkV41MfH25"
-        private const val TIDAL_CLIENT_SECRET = "dQjy0MinCEvxi1O4UmxvxWnDjt4cgHBPw8ll6nYBk98="
+
+        // Remote config (TIDAL credentials) hosted on GitHub raw, fetched on each app launch.
+        // Credentials are NOT hard-coded in source — they live only in this remote file,
+        // kept in a separate repo (simpmusic-files) so the main repo stays credential-free.
+        const val TIDAL_REMOTE_CONFIG_URL =
+            "https://raw.githubusercontent.com/maxrave-dev/simpmusic-files/refs/heads/main/remote-config.json"
     }
 }
 

@@ -47,6 +47,7 @@ import com.maxrave.kotlinytmusicscraper.models.response.SearchResponse
 import com.maxrave.kotlinytmusicscraper.models.response.SimpMusicChartResponse
 import com.maxrave.kotlinytmusicscraper.models.response.TidalSearchResponse
 import com.maxrave.kotlinytmusicscraper.models.response.TidalOAuthResponse
+import com.maxrave.kotlinytmusicscraper.models.response.RemoteConfig
 import com.maxrave.kotlinytmusicscraper.models.response.toLikeStatus
 import com.maxrave.kotlinytmusicscraper.models.response.toListAccountInfo
 import com.maxrave.kotlinytmusicscraper.models.simpmusic.FdroidResponse
@@ -175,6 +176,21 @@ class YouTube {
         get() = ytMusic.pageId
         set(value) {
             ytMusic.pageId = value
+        }
+
+    /**
+     * TIDAL credentials, backed by [Ytmusic]. Set by the data layer from cached remote config.
+     */
+    var tidalClientId: String
+        get() = ytMusic.tidalClientId
+        set(value) {
+            ytMusic.tidalClientId = value
+        }
+
+    var tidalClientSecret: String
+        get() = ytMusic.tidalClientSecret
+        set(value) {
+            ytMusic.tidalClientSecret = value
         }
 
     /**
@@ -1876,6 +1892,15 @@ class YouTube {
     suspend fun getSimpMusicChart() =
         runCatching {
             ytMusic.getSimpMusicChart().body<SimpMusicChartResponse>()
+        }
+
+    /**
+     * Fetch the remote app config (TIDAL credentials) from GitHub raw.
+     * Returns a [Result] so callers can fall back silently when the fetch/parse fails.
+     */
+    suspend fun getTidalRemoteConfig(): Result<RemoteConfig> =
+        runCatching {
+            ytMusic.getTidalRemoteConfig()
         }
 
     /**
