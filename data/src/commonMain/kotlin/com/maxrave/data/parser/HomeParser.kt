@@ -418,6 +418,36 @@ internal fun parseMixedContent(
                                         )
                                     }
                                 }
+                            } else if (musicTwoRowItemRenderer.isPodcast) {
+                                listContent.add(
+                                    Content(
+                                        album = null,
+                                        artists = listOf(),
+                                        description =
+                                            musicTwoRowItemRenderer.subtitle
+                                                ?.runs
+                                                ?.joinToString("") { it.text },
+                                        isExplicit = null,
+                                        playlistId = null,
+                                        browseId = musicTwoRowItemRenderer.navigationEndpoint?.browseEndpoint?.browseId,
+                                        thumbnails =
+                                            musicTwoRowItemRenderer.thumbnailRenderer
+                                                ?.musicThumbnailRenderer
+                                                ?.thumbnail
+                                                ?.thumbnails
+                                                ?.toListThumbnail()
+                                                ?: listOf(),
+                                        title =
+                                            musicTwoRowItemRenderer.title
+                                                ?.runs
+                                                ?.get(0)
+                                                ?.text
+                                                ?: "",
+                                        videoId = null,
+                                        views = null,
+                                        radio = null,
+                                    ),
+                                )
                             } else {
                                 continue
                             }
