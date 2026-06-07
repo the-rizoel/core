@@ -1388,6 +1388,9 @@ internal class CrossfadeExoPlayerAdapter(
                         if (retryCount < maxRetryCount) {
                             retryCount++
                             Logger.w(TAG, "Retryable source error (attempt $retryCount/$maxRetryCount) for $currentVideoId: ${error.errorCodeName}")
+                            // Snapshot the current position so the retry resumes where playback
+                            // failed instead of restarting the track from the beginning.
+                            val resumePositionMs = cachedPosition.coerceAtLeast(0L)
                             coroutineScope.launch {
                                 try {
                                     // Invalidate cached format so ResolvingDataSource fetches a fresh URL
@@ -1395,8 +1398,8 @@ internal class CrossfadeExoPlayerAdapter(
                                     streamRepository.invalidateFormat("${com.maxrave.common.MERGING_DATA_TYPE.VIDEO}$currentVideoId")
                                     // Evict from precache (it may hold a stale player)
                                     precachedPlayers.remove(currentVideoId)?.player?.release()
-                                    // Reload the track
-                                    loadAndPlayTrackInternal(localCurrentMediaItemIndex, 0L, shouldPlay = true)
+                                    // Reload the track at the saved position
+                                    loadAndPlayTrackInternal(localCurrentMediaItemIndex, resumePositionMs, shouldPlay = true)
                                 } catch (e: Exception) {
                                     if (e is CancellationException) throw e
                                     Logger.e(TAG, "Retry failed: ${e.message}", e)
