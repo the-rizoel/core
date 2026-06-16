@@ -80,7 +80,7 @@ internal class DataStoreManagerImpl(
 
     override val location: Flow<String> =
         settingsDataStore.data.map { preferences ->
-            preferences[LOCATION] ?: "VN"
+            preferences[LOCATION] ?: "US"
         }
 
     override suspend fun setLocation(location: String) {
@@ -93,7 +93,7 @@ internal class DataStoreManagerImpl(
 
     override val quality: Flow<String> =
         settingsDataStore.data.map { preferences ->
-            preferences[QUALITY] ?: COMMON_QUALITY.items[0].toString()
+            preferences[QUALITY] ?: COMMON_QUALITY.items[2].toString()
         }
 
     override suspend fun setQuality(quality: String) {
@@ -106,7 +106,7 @@ internal class DataStoreManagerImpl(
 
     override val downloadQuality: Flow<String> =
         settingsDataStore.data.map { preferences ->
-            preferences[DOWNLOAD_QUALITY] ?: COMMON_QUALITY.items[0].toString()
+            preferences[DOWNLOAD_QUALITY] ?: COMMON_QUALITY.items[2].toString()
         }
 
     override suspend fun setDownloadQuality(quality: String) {
@@ -119,7 +119,7 @@ internal class DataStoreManagerImpl(
 
     override val videoDownloadQuality: Flow<String> =
         settingsDataStore.data.map { preferences ->
-            preferences[VIDEO_DOWNLOAD_QUALITY] ?: "720p"
+            preferences[VIDEO_DOWNLOAD_QUALITY] ?: "360p"
         }
 
     override suspend fun setVideoDownloadQuality(quality: String) {
@@ -192,7 +192,7 @@ internal class DataStoreManagerImpl(
 
     override val normalizeVolume: Flow<String> =
         settingsDataStore.data.map { preferences ->
-            preferences[NORMALIZE_VOLUME] ?: FALSE
+            preferences[NORMALIZE_VOLUME] ?: TRUE
         }
 
     override suspend fun setNormalizeVolume(normalize: Boolean) {
@@ -230,7 +230,7 @@ internal class DataStoreManagerImpl(
 
     override val saveStateOfPlayback: Flow<String> =
         settingsDataStore.data.map { preferences ->
-            preferences[SAVE_STATE_OF_PLAYBACK] ?: FALSE
+            preferences[SAVE_STATE_OF_PLAYBACK] ?: TRUE
         }
 
     override suspend fun setSaveStateOfPlayback(save: Boolean) {
@@ -284,7 +284,7 @@ internal class DataStoreManagerImpl(
 
     override val saveRecentSongAndQueue: Flow<String> =
         settingsDataStore.data.map { preferences ->
-            preferences[SAVE_RECENT_SONG] ?: FALSE
+            preferences[SAVE_RECENT_SONG] ?: TRUE
         }
 
     override suspend fun setSaveRecentSongAndQueue(save: Boolean) {
@@ -464,7 +464,7 @@ internal class DataStoreManagerImpl(
 
     override val watchVideoInsteadOfPlayingAudio =
         settingsDataStore.data.map { preferences ->
-            preferences[WATCH_VIDEO_INSTEAD_OF_PLAYING_AUDIO] ?: FALSE
+            preferences[WATCH_VIDEO_INSTEAD_OF_PLAYING_AUDIO] ?: TRUE
         }
 
     override suspend fun setWatchVideoInsteadOfPlayingAudio(watch: Boolean) {
@@ -496,7 +496,7 @@ internal class DataStoreManagerImpl(
 
     override val videoQuality =
         settingsDataStore.data.map { preferences ->
-            preferences[VIDEO_QUALITY] ?: "720p"
+            preferences[VIDEO_QUALITY] ?: "360p"
         }
 
     override suspend fun setVideoQuality(quality: String) {
@@ -825,7 +825,7 @@ internal class DataStoreManagerImpl(
 
     override val keepYouTubePlaylistOffline: Flow<String> =
         settingsDataStore.data.map { preferences ->
-            preferences[KEEP_YOUTUBE_PLAYLIST_OFFLINE] ?: FALSE
+            preferences[KEEP_YOUTUBE_PLAYLIST_OFFLINE] ?: TRUE
         }
 
     override suspend fun setKeepYouTubePlaylistOffline(keep: Boolean) {
@@ -914,7 +914,7 @@ internal class DataStoreManagerImpl(
 
     override val blurFullscreenLyrics =
         settingsDataStore.data.map { preferences ->
-            preferences[BLUR_FULLSCREEN_LYRICS] ?: FALSE
+            preferences[BLUR_FULLSCREEN_LYRICS] ?: TRUE
         }
 
     override suspend fun setBlurFullscreenLyrics(blur: Boolean) {
@@ -1120,7 +1120,7 @@ internal class DataStoreManagerImpl(
 
     override val keepServiceAlive: Flow<String> =
         settingsDataStore.data.map { preferences ->
-            preferences[KEEP_SERVICE_ALIVE] ?: FALSE
+            preferences[KEEP_SERVICE_ALIVE] ?: TRUE
         }
 
     override suspend fun setKeepServiceAlive(keep: Boolean) {
@@ -1139,7 +1139,7 @@ internal class DataStoreManagerImpl(
 
     override val crossfadeEnabled: Flow<String> =
         settingsDataStore.data.map { preferences ->
-            preferences[CROSSFADE_ENABLED] ?: FALSE
+            preferences[CROSSFADE_ENABLED] ?: TRUE
         }
 
     override suspend fun setCrossfadeEnabled(enabled: Boolean) {
@@ -1332,7 +1332,7 @@ internal class DataStoreManagerImpl(
 
     override val localTrackingEnabled: Flow<String> =
         settingsDataStore.data.map { preferences ->
-            preferences[LOCAL_TRACKING_ENABLED] ?: FALSE
+            preferences[LOCAL_TRACKING_ENABLED] ?: TRUE
         }
 
     override suspend fun setLocalTrackingEnabled(enabled: Boolean) {
